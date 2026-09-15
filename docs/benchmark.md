@@ -24,3 +24,19 @@ time including container startup was 7.20 seconds (8.33× real time).
 
 The GPU worker is the deployed default override on Aurora. Startup requires CUDA;
 it raises an error instead of silently falling back to CPU if the runtime is mismatched.
+
+## Operator five-video micro-regression
+
+This is a development regression, not a general accuracy estimate. The five clips were
+used during iteration and contain only one negative example, so the metrics must not be
+presented as held-out or representative performance.
+
+| Configuration | Recall | Precision | Review | Auto-block | Throughput |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| NudeNet baseline | 75% (3/4) | 75% (3/4) | 3 | 1 | not comparable |
+| Review-only two-model ensemble | 100% (4/4) | 80% (4/5) | 4 | 1 | 1.12× real time |
+
+The ensemble processed 75.53 seconds of media in 67.40 seconds. It recovered the known
+primary-model miss as a review, preserved the correct automatic block, and retained the
+known revealing-clothing false positive as review. The next accuracy gate requires many
+more representative negative examples and a genuinely held-out split.

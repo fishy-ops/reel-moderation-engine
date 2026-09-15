@@ -11,6 +11,9 @@ from reel_moderation.sampling import AdaptiveSampler, FrameCandidate
 from reel_moderation.schema import FrameEvidence, ModerationReport
 from reel_moderation.scorers.base import DryRunScorer, FrameScorer
 from reel_moderation.scorers.nudenet import NudeNetScorer
+from reel_moderation.scorers.semantic import EnsembleVerifier, SiglipVerifier
+from reel_moderation.temporal_verifier import summarize_temporal_verification
+from reel_moderation.tracking import summarize_tracks
 
 
 def _sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -48,10 +51,20 @@ class ModerationEngine:
         if self.config.backend == "nudenet":
             if self.config.scratch_dir is None:
                 raise ValueError("scratch_dir must be configured for the NudeNet backend")
+            semantic_verifier = None
+            if self.config.semantic_verifier.backend == "siglip":
+                semantic_verifier = SiglipVerifier(self.config.semantic_verifier.model_id)
+            elif self.config.semantic_verifier.backend == "ensemble":
+                semantic_verifier = EnsembleVerifier(
+                    self.config.semantic_verifier.model_id,
+                    self.config.semantic_verifier.classifier_model_id,
+                )
             return NudeNetScorer(
                 scratch_dir=self.config.scratch_dir,
                 minimum_confidence=self.config.policy.minimum_detection_confidence,
                 execution_provider=self.config.execution_provider,
+                semantic_verifier=semantic_verifier,
+                semantic_config=self.config.semantic_verifier,
             )
         raise ValueError(f"unknown moderation backend: {self.config.backend}")
 
@@ -61,6 +74,7 @@ class ModerationEngine:
             raise FileNotFoundError(video_path)
 
         started = time.monotonic()
+        self.scorer.reset()
         sampler = AdaptiveSampler(self.config.sampling)
         evidence: list[FrameEvidence] = []
         warnings: list[str] = []
@@ -76,14 +90,45 @@ class ModerationEngine:
                         frame_index=candidate.frame_index,
                         timestamp_seconds=round(candidate.timestamp_seconds, 6),
                         risk_score=score.risk_score,
+                        raw_risk_score=score.raw_risk_score,
                         reasons=sorted(candidate.reasons),
                         detections=score.detections,
+                        verifier_signals=score.verifier_signals,
                     )
                 )
 
         verdict, segments = self.aggregator.verdict(evidence)
         risky_evidence = [
             item for item in evidence if item.risk_score >= self.config.policy.review_threshold
+        ]
+        semantic_audit = [
+            {
+                "timestamp_seconds": item.timestamp_seconds,
+                "raw_risk_score": item.raw_risk_score,
+                "signals": item.verifier_signals,
+            }
+            for item in evidence
+            if item.verifier_signals
+        ]
+        top_candidates = [
+            {
+                "timestamp_seconds": item.timestamp_seconds,
+                "raw_risk_score": item.raw_risk_score,
+                "detections": [
+                    {
+                        "label": detection.label,
+                        "score": detection.score,
+                        "crop": detection.crop,
+                    }
+                    for detection in item.detections
+                ],
+            }
+            for item in sorted(
+                evidence,
+                key=lambda candidate: candidate.raw_risk_score or 0.0,
+                reverse=True,
+            )[:20]
+            if item.raw_risk_score
         ]
         if sampler.stats.capped_candidates:
             warnings.append(
@@ -112,5 +157,12 @@ class ModerationEngine:
                 "label_counts": summarize_labels(risky_evidence),
                 "sampling": self.config.sampling.model_dump(mode="json"),
                 "policy": self.config.policy.model_dump(mode="json"),
+                "semantic_verifier": self.config.semantic_verifier.model_dump(mode="json"),
+                "semantic_audit": semantic_audit,
+                "top_candidates": top_candidates,
+                "temporal_verification": summarize_temporal_verification(
+                    evidence, segments
+                ),
+                "region_tracks": summarize_tracks(evidence),
             },
         )

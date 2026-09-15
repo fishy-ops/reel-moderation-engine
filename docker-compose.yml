@@ -11,6 +11,8 @@ x-service-defaults: &service-defaults
     MODERATION_BATCH_SIZE: "8"
     MAX_UPLOAD_BYTES: "2147483648"
     DELETE_INPUTS_AFTER_PROCESSING: "false"
+    MODERATION_DERIVED_MEDIA_ROOT: /data/challenges
+    MODERATION_FEEDBACK_DATABASE: /data/reports/feedback.sqlite
   volumes:
     - /tank/archive/reel-moderation/data:/data
     - /tank/archive/reel-moderation/models:/home/moderator/.cache
@@ -32,7 +34,16 @@ services:
 
   worker:
     <<: *service-defaults
-    command: ["rq", "worker", "--url", "redis://redis:6379/0", "moderation"]
+    command:
+      [
+        "rq",
+        "worker",
+        "--worker-class",
+        "rq.worker.SimpleWorker",
+        "--url",
+        "redis://redis:6379/0",
+        "moderation",
+      ]
     mem_limit: 12g
     cpus: 4.0
 

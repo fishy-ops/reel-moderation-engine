@@ -34,6 +34,7 @@ class TemporalAggregator:
                     for frame in cluster
                     for detection in frame.detections
                     if detection.score >= self.config.minimum_detection_confidence
+                    and detection.label.endswith("_EXPOSED")
                 }
             )
             output.append(

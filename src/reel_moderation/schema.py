@@ -26,8 +26,10 @@ class FrameEvidence(BaseModel):
     frame_index: int = Field(ge=0)
     timestamp_seconds: float = Field(ge=0)
     risk_score: float = Field(ge=0, le=1)
+    raw_risk_score: float | None = Field(default=None, ge=0, le=1)
     reasons: list[str] = Field(default_factory=list)
     detections: list[Detection] = Field(default_factory=list)
+    verifier_signals: dict[str, float | str] = Field(default_factory=dict)
 
 
 class EvidenceSegment(BaseModel):

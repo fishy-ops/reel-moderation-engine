@@ -4,9 +4,11 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from reel_moderation.config import SemanticVerifierConfig
 from reel_moderation.sampling import FrameCandidate, RGBFrame
 from reel_moderation.schema import Detection
 from reel_moderation.scorers.base import FrameScore, FrameScorer
+from reel_moderation.scorers.semantic import SemanticVerifier, adjust_risk
 
 # These detector classes represent visible anatomy. Covered-class detections are
 # deliberately not treated as violations.
@@ -17,6 +19,13 @@ EXPOSED_CLASS_WEIGHTS: dict[str, float] = {
     "MALE_BREAST_EXPOSED": 0.35,
     "MALE_GENITALIA_EXPOSED": 1.00,
     "BUTTOCKS_EXPOSED": 0.72,
+}
+
+COVERED_CONTEXT_CLASSES = {
+    "ANUS_COVERED",
+    "BUTTOCKS_COVERED",
+    "FEMALE_BREAST_COVERED",
+    "FEMALE_GENITALIA_COVERED",
 }
 
 
@@ -34,6 +43,19 @@ def _risk_from_detections(detections: list[Detection]) -> float:
         weight = EXPOSED_CLASS_WEIGHTS.get(label, 0.0)
         complement *= 1.0 - min(1.0, score * weight)
     return min(1.0, max(0.0, 1.0 - complement))
+
+
+def _apply_semantic_mode(
+    raw_risk: float,
+    adjusted_risk: float,
+    decision: str,
+    mode: str,
+) -> float:
+    if mode == "enforce":
+        return adjusted_risk
+    if mode == "review" and decision == "exposed":
+        return adjusted_risk
+    return raw_risk
 
 
 def _crops(rgb: RGBFrame) -> list[tuple[str, RGBFrame]]:
@@ -75,6 +97,8 @@ class NudeNetScorer(FrameScorer):
         tile_small_regions: bool = True,
         tile_interval_seconds: float = 2.0,
         execution_provider: str = "auto",
+        semantic_verifier: SemanticVerifier | None = None,
+        semantic_config: SemanticVerifierConfig | None = None,
     ) -> None:
         if scratch_dir is None:
             raise ValueError("NudeNet requires an explicit scratch_dir")
@@ -84,6 +108,9 @@ class NudeNetScorer(FrameScorer):
         self.tile_small_regions = tile_small_regions
         self.tile_interval_seconds = tile_interval_seconds
         self._last_tiled_at = float("-inf")
+        self._last_semantic_at = float("-inf")
+        self.semantic_verifier = semantic_verifier
+        self.semantic_config = semantic_config or SemanticVerifierConfig()
 
         try:
             import nudenet
@@ -112,6 +139,34 @@ class NudeNetScorer(FrameScorer):
                 "verify that the CUDA and cuDNN runtime versions match"
             )
         self.name = f"nudenet/{providers[0]}" if providers else "nudenet/unknown"
+        if self.semantic_verifier:
+            self.name += f"+{self.semantic_verifier.name}/{self.semantic_config.mode}"
+
+    def reset(self) -> None:
+        self._last_tiled_at = float("-inf")
+        self._last_semantic_at = float("-inf")
+
+    def _should_verify_semantically(self, frame: FrameCandidate, raw_risk: float) -> bool:
+        if not self.semantic_verifier:
+            return False
+        elapsed = frame.timestamp_seconds - self._last_semantic_at
+        if elapsed < self.semantic_config.minimum_interval_seconds:
+            return False
+        adaptive_reasons = {
+            "scene_change",
+            "localized_overlay_change",
+            "luminance_flash",
+            "dense_burst",
+        }
+        should_verify = (
+            frame.frame_index == 0
+            or raw_risk >= self.semantic_config.trigger_threshold
+            or elapsed >= self.semantic_config.baseline_interval_seconds
+            or bool(frame.reasons & adaptive_reasons)
+        )
+        if should_verify:
+            self._last_semantic_at = frame.timestamp_seconds
+        return should_verify
 
     def _should_tile(self, frame: FrameCandidate) -> bool:
         if not self.tile_small_regions:
@@ -139,7 +194,8 @@ class NudeNetScorer(FrameScorer):
         for item in raw:
             label = str(item.get("class", "UNKNOWN")).upper()
             score = float(item.get("score", 0.0))
-            if score < self.minimum_confidence or label not in EXPOSED_CLASS_WEIGHTS:
+            policy_or_context = label in EXPOSED_CLASS_WEIGHTS or label in COVERED_CONTEXT_CLASSES
+            if score < self.minimum_confidence or not policy_or_context:
                 continue
             raw_box = item.get("box")
             box = tuple(int(value) for value in raw_box) if raw_box else None
@@ -164,6 +220,31 @@ class NudeNetScorer(FrameScorer):
                 for crop_name, crop in regions:
                     detections.extend(self._detect(crop, crop_name, directory))
 
-            risk = _risk_from_detections(detections)
-            output.append(FrameScore(risk_score=min(risk, 1.0), detections=detections))
+            raw_risk = _risk_from_detections(detections)
+            risk = raw_risk
+            signals: dict[str, float | str] = {}
+            if self._should_verify_semantically(frame, raw_risk):
+                # Give the independent verifier full-frame and tiled views even
+                # when the primary detector found no candidate. This is the path
+                # that can recover complete primary-model misses.
+                semantic_regions = _crops(frame.rgb)
+                semantic_score = self.semantic_verifier.score(
+                    [region for _, region in semantic_regions]
+                )
+                adjusted, decision = adjust_risk(raw_risk, semantic_score, self.semantic_config)
+                signals = {**semantic_score.signals(), "semantic_decision": decision}
+                risk = _apply_semantic_mode(
+                    raw_risk,
+                    adjusted,
+                    decision,
+                    self.semantic_config.mode,
+                )
+            output.append(
+                FrameScore(
+                    risk_score=min(risk, 1.0),
+                    raw_risk_score=min(raw_risk, 1.0),
+                    detections=detections,
+                    verifier_signals=signals,
+                )
+            )
         return output

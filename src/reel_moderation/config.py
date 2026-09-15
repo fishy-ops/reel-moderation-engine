@@ -35,9 +35,33 @@ class PolicyConfig(BaseModel):
         return self
 
 
+class SemanticVerifierConfig(BaseModel):
+    backend: Literal["none", "siglip", "ensemble"] = "none"
+    model_id: str = "google/siglip2-base-patch16-224"
+    classifier_model_id: str = "Falconsai/nsfw_image_detection"
+    mode: Literal["audit", "review", "enforce"] = "audit"
+    trigger_threshold: float = Field(default=0.32, ge=0, le=1)
+    baseline_interval_seconds: float = Field(default=1.0, gt=0, le=10)
+    minimum_interval_seconds: float = Field(default=0.25, gt=0, le=2)
+    covered_probability_threshold: float = Field(default=0.60, ge=0, le=1)
+    covered_margin: float = Field(default=0.20, ge=0, le=1)
+    covered_risk_multiplier: float = Field(default=0.45, ge=0, le=1)
+    exposed_probability_threshold: float = Field(default=0.50, ge=0, le=1)
+    exposed_margin: float = Field(default=0.15, ge=0, le=1)
+    exposed_boost: float = Field(default=0.25, ge=0, le=1)
+    exposed_review_floor: float = Field(default=0.55, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def semantic_intervals_are_ordered(self) -> SemanticVerifierConfig:
+        if self.minimum_interval_seconds > self.baseline_interval_seconds:
+            raise ValueError("semantic minimum interval cannot exceed baseline interval")
+        return self
+
+
 class EngineConfig(BaseModel):
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
+    semantic_verifier: SemanticVerifierConfig = Field(default_factory=SemanticVerifierConfig)
     batch_size: int = Field(default=16, ge=1, le=128)
     backend: str = "nudenet"
     execution_provider: Literal["auto", "cuda", "cpu"] = "auto"

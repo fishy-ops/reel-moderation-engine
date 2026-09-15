@@ -70,6 +70,33 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
 The report's `backend` field records the ONNX execution provider actually selected;
 do not assume GPU acceleration merely because a container can see the device.
 
+The GPU worker keeps one model ensemble warm across jobs. The first task after a
+restart pays model-load time; later tasks reuse the loaded models while resetting all
+per-video temporal state.
+
+The GPU override also enables a SigLIP 2 plus Falconsai verifier ensemble in `review`
+mode. It runs on a periodic baseline, adaptive visual-change triggers, and
+primary-model candidates, so it can observe complete primary-model misses. Audit mode
+records signals without changing the verdict; review mode may only raise a candidate
+to human review and can neither lower risk nor auto-block by itself. Switch to full
+`enforce` mode only after a held-out evaluation establishes safe thresholds. See the
+[phase-two architecture](docs/architecture-v2.md).
+
+## Feedback, fingerprints, and challenge tests
+
+```bash
+reel-moderate fingerprint /data/incoming/video.mp4 -o /data/reports/video.fingerprint.json
+reel-moderate compare-fingerprints first.fingerprint.json second.fingerprint.json
+reel-moderate record-feedback /data/reports/video.json \
+  --ground-truth violation --reason "brief exposure" --event-start 2.0 --event-end 3.0
+reel-moderate feedback-summary /data/reports/feedback.sqlite
+reel-moderate generate-challenge /data/incoming/approved.mp4 \
+  --variant reflection -o /data/challenges/approved-reflection.mp4
+```
+
+Challenge generation is restricted to Aurora's configured derived-media directory.
+It must only be used with operator-approved, lawfully obtained source media.
+
 ## Privacy and data handling
 
 - Raw videos, frames, datasets, weights, reports, and model caches are Git-ignored.
@@ -93,6 +120,6 @@ media into the repository.
 ## Current status
 
 This is a research prototype, not a production moderation authority. NudeNet provides
-the initial fine-grained backend; the scorer interface is replaceable. The next model
-milestone is a calibrated fast first-stage classifier trained on licensed data and
-adversarial transformations, followed by bias and context evaluation.
+high-recall proposals; two independent classifiers provide audit signals. The next model
+milestone is calibration against a larger legally sourced held-out set, followed by
+bias, context, adversarial, and appeal-outcome evaluation.

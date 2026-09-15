@@ -29,6 +29,10 @@ nudenet = [
   "nudenet>=3.4,<4",
   "pillow>=10,<13",
 ]
+semantic = [
+  "torch>=2.12,<3",
+  "transformers>=4.57,<6",
+]
 openclip = [
   "open-clip-torch>=3,<4",
   "pillow>=10,<13",
