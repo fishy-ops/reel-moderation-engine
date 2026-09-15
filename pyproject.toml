@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "reel-moderation-engine"
+version = "0.1.0"
+description = "Adaptive video moderation pipeline for brief and evasive visual-policy violations"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "Proprietary" }
+dependencies = [
+  "av>=14,<17",
+  "numpy>=1.26,<3",
+  "pydantic>=2.9,<3",
+  "pydantic-settings>=2.6,<3",
+  "typer>=0.15,<1",
+]
+
+[project.optional-dependencies]
+api = [
+  "fastapi>=0.115,<1",
+  "python-multipart>=0.0.18,<1",
+  "redis>=5,<7",
+  "rq>=2,<3",
+  "uvicorn[standard]>=0.34,<1",
+]
+nudenet = [
+  "nudenet>=3.4,<4",
+  "pillow>=10,<13",
+]
+openclip = [
+  "open-clip-torch>=3,<4",
+  "pillow>=10,<13",
+]
+dev = [
+  "httpx>=0.28,<1",
+  "pytest>=8,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+reel-moderate = "reel_moderation.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reel_moderation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

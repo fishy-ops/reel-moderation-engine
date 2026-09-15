@@ -1,0 +1,12 @@
+av>=14,<17
+fastapi>=0.115,<1
+nudenet>=3.4,<4
+numpy>=1.26,<3
+pillow>=10,<13
+pydantic>=2.9,<3
+pydantic-settings>=2.6,<3
+python-multipart>=0.0.18,<1
+redis>=5,<7
+rq>=2,<3
+typer>=0.15,<1
+uvicorn[standard]>=0.34,<1

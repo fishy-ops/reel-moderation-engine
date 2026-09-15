@@ -1,0 +1,15 @@
+av>=14,<17
+fastapi>=0.115,<1
+numpy>=1.26,<3
+# Releases 1.27+ default to CUDA 13; this image intentionally carries CUDA
+# 12.8/cuDNN 9 for compatibility with Aurora's current deployment.
+onnxruntime-gpu>=1.21,<1.27
+opencv-python-headless>=4.10,<6
+pillow>=10,<13
+pydantic>=2.9,<3
+pydantic-settings>=2.6,<3
+python-multipart>=0.0.18,<1
+redis>=5,<7
+rq>=2,<3
+typer>=0.15,<1
+uvicorn[standard]>=0.34,<1

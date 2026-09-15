@@ -1,0 +1,60 @@
+name: reel-moderation-engine
+
+x-service-defaults: &service-defaults
+  build: .
+  restart: unless-stopped
+  environment: &moderation-environment
+    REDIS_URL: redis://redis:6379/0
+    MODERATION_DATA_DIR: /data
+    MODERATION_SCRATCH_DIR: /moderation-scratch
+    MODERATION_BACKEND: nudenet
+    MODERATION_BATCH_SIZE: "8"
+    MAX_UPLOAD_BYTES: "2147483648"
+    DELETE_INPUTS_AFTER_PROCESSING: "false"
+  volumes:
+    - /tank/archive/reel-moderation/data:/data
+    - /tank/archive/reel-moderation/models:/home/moderator/.cache
+  tmpfs:
+    - /moderation-scratch:size=2g,mode=0700,uid=10001,gid=10001
+  depends_on:
+    redis:
+      condition: service_healthy
+  networks:
+    - moderation
+
+services:
+  api:
+    <<: *service-defaults
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:8088:8088"
+    mem_limit: 2g
+    cpus: 1.5
+
+  worker:
+    <<: *service-defaults
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "moderation"]
+    mem_limit: 12g
+    cpus: 4.0
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis-data:/data
+    mem_limit: 768m
+    cpus: 0.5
+    networks:
+      - moderation
+
+volumes:
+  redis-data:
+
+networks:
+  moderation:
+    driver: bridge
