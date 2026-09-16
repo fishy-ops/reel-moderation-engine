@@ -10,6 +10,7 @@ x-service-defaults: &service-defaults
     MODERATION_BACKEND: nudenet
     MODERATION_BATCH_SIZE: "8"
     MAX_UPLOAD_BYTES: "2147483648"
+    MAX_QUEUED_JOBS: "25"
     DELETE_INPUTS_AFTER_PROCESSING: "false"
     MODERATION_DERIVED_MEDIA_ROOT: /data/challenges
     MODERATION_FEEDBACK_DATABASE: /data/reports/feedback.sqlite

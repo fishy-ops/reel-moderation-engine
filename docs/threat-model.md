@@ -18,6 +18,7 @@
 - Detector scratch images live in tmpfs and are immediately deleted.
 - Input paths are constrained to the configured data directory.
 - Upload size and container suffixes are bounded.
+- Worker readiness and bounded queue capacity are checked before upload bytes are stored.
 - The API binds to localhost and Redis has no host port.
 - Containers run without root and have CPU/memory limits.
 - Ambiguous evidence routes to human review.

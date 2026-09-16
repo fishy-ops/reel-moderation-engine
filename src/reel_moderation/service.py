@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field, model_validator
 from redis import Redis
-from rq import Queue
+from rq import Queue, Worker
 from rq.job import Job
 
 from reel_moderation.feedback import record_feedback, update_report_aggregate
@@ -17,6 +17,7 @@ from reel_moderation.worker import moderate_job
 DATA_DIR = Path(os.environ.get("MODERATION_DATA_DIR", "/data"))
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(2 * 1024**3)))
+MAX_QUEUED_JOBS = int(os.environ.get("MAX_QUEUED_JOBS", "25"))
 FEEDBACK_DATABASE = Path(
     os.environ.get("MODERATION_FEEDBACK_DATABASE", "/data/reports/feedback.sqlite")
 )
@@ -38,6 +39,13 @@ class StatusResponse(BaseModel):
     status: str
     result: dict | None = None
     error: str | None = None
+
+
+class ReadinessResponse(BaseModel):
+    status: Literal["ready"]
+    queued_jobs: int
+    workers: int
+    capacity_remaining: int
 
 
 class FeedbackRequest(BaseModel):
@@ -91,12 +99,54 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _registered_worker_count() -> int:
+    available_states = {"idle", "busy"}
+    count = 0
+    for worker in Worker.all(queue=queue):
+        state = worker.get_state()
+        if str(getattr(state, "value", state)) in available_states:
+            count += 1
+    return count
+
+
+def _capacity() -> tuple[int, int]:
+    redis_connection.ping()
+    return int(queue.count), _registered_worker_count()
+
+
+def _ensure_accepting_uploads() -> tuple[int, int]:
+    try:
+        queued_jobs, workers = _capacity()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="moderation queue is unavailable",
+        ) from exc
+    if workers < 1:
+        raise HTTPException(status_code=503, detail="no moderation worker is available")
+    if queued_jobs >= MAX_QUEUED_JOBS:
+        raise HTTPException(status_code=429, detail="moderation queue is at capacity")
+    return queued_jobs, workers
+
+
+@app.get("/ready", response_model=ReadinessResponse)
+def ready() -> ReadinessResponse:
+    queued_jobs, workers = _ensure_accepting_uploads()
+    return ReadinessResponse(
+        status="ready",
+        queued_jobs=queued_jobs,
+        workers=workers,
+        capacity_remaining=MAX_QUEUED_JOBS - queued_jobs,
+    )
+
+
 @app.post(
     "/api/v1/moderate",
     response_model=SubmitResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def submit_video(file: Annotated[UploadFile, File(...)]) -> SubmitResponse:
+    _ensure_accepting_uploads()
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
         raise HTTPException(status_code=415, detail="unsupported video container")

@@ -50,6 +50,10 @@ The provided Compose deployment starts:
 - an isolated Redis instance
 - a tmpfs scratch area so decoded detector inputs are never persisted
 
+`/health` checks the API and Redis path. `/ready` additionally requires a registered
+worker and available queue capacity. Uploads are rejected before any bytes are stored
+when no worker is available or the configured backlog is full.
+
 The API binds to localhost by default. Set `API_BIND_ADDRESS` to Aurora's Tailscale
 address only when direct tailnet access is needed; do not expose it to the public web.
 
