@@ -148,6 +148,98 @@ def test_report_signal_rejects_impossible_counts() -> None:
     assert response.status_code == 422
 
 
+def test_feedback_endpoint_records_bounded_event(tmp_path, monkeypatch) -> None:
+    client = client_for(tmp_path, monkeypatch)
+    monkeypatch.setattr(service, "FEEDBACK_DATABASE", tmp_path / "feedback.sqlite")
+    task_id = "a" * 32
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / f"{task_id}.json").write_text(
+        '{"video_sha256":"digest","verdict":"FLAG_FOR_HUMAN_REVIEW",'
+        '"metadata":{"pipeline_version":"test"}}',
+        encoding="utf-8",
+    )
+
+    response = client.post(
+        "/api/v1/feedback",
+        json={
+            "task_id": task_id,
+            "ground_truth": "violation",
+            "reason": "operator-confirmed brief event",
+            "reviewer": "test-reviewer",
+            "event_start_seconds": 2.0,
+            "event_end_seconds": 3.0,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"feedback_id": 1}
+    assert (tmp_path / "feedback.sqlite").is_file()
+
+
+def test_report_signal_updates_priority_without_changing_verdict(
+    tmp_path, monkeypatch
+) -> None:
+    class FinishedJob:
+        is_finished = True
+        result = {
+            "video_sha256": "digest",
+            "max_risk_score": 0.6,
+            "verdict": "FLAG_FOR_HUMAN_REVIEW",
+        }
+
+    monkeypatch.setattr(
+        service.Job,
+        "fetch",
+        classmethod(lambda cls, task_id, connection: FinishedJob()),
+    )
+    monkeypatch.setattr(service, "FEEDBACK_DATABASE", tmp_path / "feedback.sqlite")
+    client = TestClient(service.app)
+
+    response = client.post(
+        "/api/v1/report-signal",
+        json={
+            "task_id": "a" * 32,
+            "impressions": 100,
+            "unique_reports": 10,
+            "trusted_reports": 8,
+            "reports_last_hour": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["recommendation"] == "expedite_human_review"
+    assert 0.65 <= response.json()["review_priority"] <= 0.94
+    assert FinishedJob.result["verdict"] == "FLAG_FOR_HUMAN_REVIEW"
+
+
+def test_report_signal_rejects_unfinished_job(monkeypatch) -> None:
+    class QueuedJob:
+        is_finished = False
+        result = None
+
+    monkeypatch.setattr(
+        service.Job,
+        "fetch",
+        classmethod(lambda cls, task_id, connection: QueuedJob()),
+    )
+    client = TestClient(service.app)
+
+    response = client.post(
+        "/api/v1/report-signal",
+        json={
+            "task_id": "a" * 32,
+            "impressions": 1,
+            "unique_reports": 0,
+            "trusted_reports": 0,
+            "reports_last_hour": 0,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "moderation task is not finished"
+
+
 def test_readiness_reports_queue_capacity(tmp_path, monkeypatch) -> None:
     client = client_for(tmp_path, monkeypatch, FakeQueue(count=3))
     monkeypatch.setattr(service, "MAX_QUEUED_JOBS", 10)
