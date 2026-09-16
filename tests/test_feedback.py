@@ -66,6 +66,25 @@ def test_report_aggregate_is_upserted_without_reporter_identity(tmp_path: Path) 
     assert second > first
 
 
+def test_stale_report_update_cannot_reduce_cumulative_counts(tmp_path: Path) -> None:
+    database = tmp_path / "feedback.sqlite"
+    update_report_aggregate(database, "digest", 0.2, 1000, 20, 15, 5)
+
+    priority = update_report_aggregate(database, "digest", 0.2, 100, 2, 1, 0)
+
+    expected = report_priority(0.2, 1000, 20, 15, 0)
+    assert priority == pytest.approx(expected)
+    with closing(sqlite3.connect(database)) as connection:
+        stored = connection.execute(
+            """
+            SELECT impressions, unique_reports, trusted_reports, reports_last_hour
+            FROM report_aggregates
+            WHERE video_sha256 = 'digest'
+            """
+        ).fetchone()
+    assert stored == (1000, 20, 15, 0)
+
+
 def test_feedback_is_grouped_by_exact_configuration(tmp_path: Path) -> None:
     database = tmp_path / "feedback.sqlite"
     first = tmp_path / "first.json"

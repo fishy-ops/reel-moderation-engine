@@ -227,15 +227,28 @@ def update_report_aggregate(
     trusted_reports: int,
     reports_last_hour: int,
 ) -> float:
-    priority = report_priority(
-        model_risk,
-        impressions,
-        unique_reports,
-        trusted_reports,
-        reports_last_hour,
-    )
     initialize_database(database)
     with closing(sqlite3.connect(database)) as connection, connection:
+        connection.execute("BEGIN IMMEDIATE")
+        existing = connection.execute(
+            """
+            SELECT impressions, unique_reports, trusted_reports
+            FROM report_aggregates
+            WHERE video_sha256 = ?
+            """,
+            (video_sha256,),
+        ).fetchone()
+        if existing:
+            impressions = max(impressions, int(existing[0]))
+            unique_reports = max(unique_reports, int(existing[1]))
+            trusted_reports = max(trusted_reports, int(existing[2]))
+        priority = report_priority(
+            model_risk,
+            impressions,
+            unique_reports,
+            trusted_reports,
+            reports_last_hour,
+        )
         connection.execute(
             """
             INSERT INTO report_aggregates (

@@ -63,7 +63,9 @@ timestamps, reason, reviewer identifier, pipeline source fingerprint, and decisi
 configuration fingerprint in SQLite. It stores no images. Outcomes can be grouped by
 exact configuration so feedback from different deployments is not mixed. Report
 priority uses report rate, trusted-report fraction, and recent velocity, capped below
-the automatic-enforcement threshold to resist brigading.
+the automatic-enforcement threshold to resist brigading. Cumulative impression,
+unique-report, and trusted-report counters are monotonic so stale updates cannot roll
+priority inputs backward; the recent-velocity window may decay normally.
 
 ## Adversarial challenge generation
 
