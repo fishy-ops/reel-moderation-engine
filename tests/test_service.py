@@ -26,6 +26,7 @@ def client_for(tmp_path: Path, monkeypatch, queue: FakeQueue | None = None) -> T
     monkeypatch.setattr(service, "queue", queue or FakeQueue())
     monkeypatch.setattr(service.redis_connection, "ping", lambda: True)
     monkeypatch.setattr(service, "_registered_worker_count", lambda: 1)
+    monkeypatch.setattr(service, "_probe_video", lambda path: None)
     return TestClient(service.app)
 
 
@@ -189,3 +190,60 @@ def test_upload_is_rejected_before_storage_when_queue_is_full(
     assert response.status_code == 429
     assert response.json()["detail"] == "moderation queue is at capacity"
     assert not (tmp_path / "incoming").exists()
+
+
+def test_invalid_container_is_removed_before_queueing(tmp_path, monkeypatch) -> None:
+    queue = FakeQueue()
+    client = client_for(tmp_path, monkeypatch, queue)
+
+    def reject(path: Path) -> None:
+        raise ValueError("invalid or unreadable video container")
+
+    monkeypatch.setattr(service, "_probe_video", reject)
+
+    response = client.post(
+        "/api/v1/moderate",
+        files={"file": ("video.mp4", b"not-a-video", "video/mp4")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "invalid or unreadable video container"
+    assert queue.calls == []
+    assert not list((tmp_path / "incoming").iterdir())
+
+
+def test_probe_rejects_extreme_resolution(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"synthetic")
+
+    class ProbeResult:
+        stdout = (
+            '{"streams":[{"codec_type":"video","width":8000,"height":5000}],'
+            '"format":{"duration":"10.0"}}'
+        )
+
+    monkeypatch.setattr(service.subprocess, "run", lambda *args, **kwargs: ProbeResult())
+
+    try:
+        service._probe_video(video)
+    except ValueError as exc:
+        assert str(exc) == "video resolution exceeds the configured limit"
+    else:  # pragma: no cover - assertion branch
+        raise AssertionError("extreme resolution was accepted")
+
+
+def test_probe_rejects_container_without_video_stream(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "audio-only.mp4"
+    video.write_bytes(b"synthetic")
+
+    class ProbeResult:
+        stdout = '{"streams":[],"format":{"duration":"10.0"}}'
+
+    monkeypatch.setattr(service.subprocess, "run", lambda *args, **kwargs: ProbeResult())
+
+    try:
+        service._probe_video(video)
+    except ValueError as exc:
+        assert str(exc) == "video has no valid visual stream"
+    else:  # pragma: no cover - assertion branch
+        raise AssertionError("audio-only container was accepted")

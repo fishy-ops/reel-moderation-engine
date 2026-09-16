@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Annotated, Literal
@@ -18,6 +20,8 @@ DATA_DIR = Path(os.environ.get("MODERATION_DATA_DIR", "/data"))
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(2 * 1024**3)))
 MAX_QUEUED_JOBS = int(os.environ.get("MAX_QUEUED_JOBS", "25"))
+MAX_VIDEO_SECONDS = float(os.environ.get("MAX_VIDEO_SECONDS", "300"))
+MAX_VIDEO_PIXELS = int(os.environ.get("MAX_VIDEO_PIXELS", str(7680 * 4320)))
 FEEDBACK_DATABASE = Path(
     os.environ.get("MODERATION_FEEDBACK_DATABASE", "/data/reports/feedback.sqlite")
 )
@@ -129,6 +133,59 @@ def _ensure_accepting_uploads() -> tuple[int, int]:
     return queued_jobs, workers
 
 
+def _probe_video(path: Path) -> None:
+    try:
+        completed = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-protocol_whitelist",
+                "file,crypto,data,pipe",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_type,width,height:format=duration",
+                "-of",
+                "json",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        payload = json.loads(completed.stdout)
+        video_streams = [
+            stream
+            for stream in payload.get("streams", [])
+            if stream.get("codec_type") == "video"
+        ]
+        duration = float(payload["format"]["duration"])
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        OSError,
+        subprocess.SubprocessError,
+    ) as exc:
+        raise ValueError("invalid or unreadable video container") from exc
+    if not video_streams:
+        raise ValueError("video has no valid visual stream")
+    try:
+        width = int(video_streams[0]["width"])
+        height = int(video_streams[0]["height"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("video has no valid visual stream") from exc
+    if duration <= 0 or width <= 0 or height <= 0:
+        raise ValueError("video has no valid visual stream")
+    if duration > MAX_VIDEO_SECONDS:
+        raise ValueError("video duration exceeds the configured limit")
+    if width * height > MAX_VIDEO_PIXELS:
+        raise ValueError("video resolution exceeds the configured limit")
+
+
 @app.get("/ready", response_model=ReadinessResponse)
 def ready() -> ReadinessResponse:
     queued_jobs, workers = _ensure_accepting_uploads()
@@ -172,6 +229,12 @@ async def submit_video(file: Annotated[UploadFile, File(...)]) -> SubmitResponse
     if written == 0:
         destination.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="video is empty")
+
+    try:
+        _probe_video(destination)
+    except ValueError as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
         queue.enqueue(

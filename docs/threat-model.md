@@ -19,6 +19,8 @@
 - Input paths are constrained to the configured data directory.
 - Upload size and container suffixes are bounded.
 - Worker readiness and bounded queue capacity are checked before upload bytes are stored.
+- A time-bounded, local-protocol FFmpeg probe rejects malformed, overlong, and
+  extreme-resolution inputs before queue admission.
 - The API binds to localhost and Redis has no host port.
 - Containers run without root and have CPU/memory limits.
 - Ambiguous evidence routes to human review.
