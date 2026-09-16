@@ -18,5 +18,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install '.[api,dev]'
+      - run: python -m pip check
       - run: ruff check .
       - run: pytest --cov=reel_moderation --cov-report=term-missing
+      - run: docker compose -f docker-compose.yml -f docker-compose.gpu.yml config -q

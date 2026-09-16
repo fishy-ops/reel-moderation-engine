@@ -72,6 +72,8 @@ The default upload limit is 512 MB and remains configurable for trusted deployme
 
 The API binds to localhost by default. Set `API_BIND_ADDRESS` to Aurora's Tailscale
 address only when direct tailnet access is needed; do not expose it to the public web.
+CI validates Python dependency integrity, tests and linting, and the merged CPU/GPU
+Compose configuration on every main-branch push and pull request.
 
 On Aurora:
 
