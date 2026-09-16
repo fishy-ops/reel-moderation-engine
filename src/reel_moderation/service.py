@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 import uuid
 from pathlib import Path
 from typing import Annotated, Literal
@@ -22,6 +23,9 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(2 * 1024**3)))
 MAX_QUEUED_JOBS = int(os.environ.get("MAX_QUEUED_JOBS", "25"))
 MAX_VIDEO_SECONDS = float(os.environ.get("MAX_VIDEO_SECONDS", "300"))
 MAX_VIDEO_PIXELS = int(os.environ.get("MAX_VIDEO_PIXELS", str(7680 * 4320)))
+MAX_UPLOAD_RETENTION_SECONDS = int(
+    os.environ.get("MAX_UPLOAD_RETENTION_SECONDS", str(24 * 3600))
+)
 FEEDBACK_DATABASE = Path(
     os.environ.get("MODERATION_FEEDBACK_DATABASE", "/data/reports/feedback.sqlite")
 )
@@ -186,6 +190,28 @@ def _probe_video(path: Path) -> None:
         raise ValueError("video resolution exceeds the configured limit")
 
 
+def _remove_stale_uploads(incoming: Path, now: float | None = None) -> int:
+    """Remove abandoned opaque uploads without touching operator source media."""
+
+    cutoff = (time.time() if now is None else now) - MAX_UPLOAD_RETENTION_SECONDS
+    removed = 0
+    for candidate in incoming.iterdir():
+        if candidate.is_symlink() or not candidate.is_file():
+            continue
+        if candidate.suffix.lower() not in ALLOWED_SUFFIXES:
+            continue
+        task_id = candidate.stem
+        if len(task_id) != 32 or any(char not in "0123456789abcdef" for char in task_id):
+            continue
+        try:
+            if candidate.stat().st_mtime < cutoff:
+                candidate.unlink()
+                removed += 1
+        except FileNotFoundError:
+            continue
+    return removed
+
+
 @app.get("/ready", response_model=ReadinessResponse)
 def ready() -> ReadinessResponse:
     queued_jobs, workers = _ensure_accepting_uploads()
@@ -211,6 +237,7 @@ async def submit_video(file: Annotated[UploadFile, File(...)]) -> SubmitResponse
     task_id = uuid.uuid4().hex
     incoming = DATA_DIR / "incoming"
     incoming.mkdir(parents=True, exist_ok=True)
+    _remove_stale_uploads(incoming)
     destination = incoming / f"{task_id}{suffix}"
     written = 0
     try:

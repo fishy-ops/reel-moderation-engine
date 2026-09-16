@@ -21,9 +21,12 @@
 - Worker readiness and bounded queue capacity are checked before upload bytes are stored.
 - A time-bounded, local-protocol FFmpeg probe rejects malformed, overlong, and
   extreme-resolution inputs before queue admission.
-- Service roots and the model cache are read-only, transient upload/parser storage is
-  tmpfs, Linux capabilities are dropped, and privilege escalation is disabled.
+- Service roots and the model cache are read-only, multipart-parser and detector
+  scratch storage is tmpfs, Linux capabilities are dropped, and privilege escalation
+  is disabled.
 - Opaque API upload copies are deleted after either successful or failed processing.
+- Abandoned upload copies with valid task-ID names are removed after 24 hours on the
+  next admission attempt.
 - The API binds to localhost and Redis has no host port.
 - Containers run without root and have CPU/memory limits.
 - Ambiguous evidence routes to human review.

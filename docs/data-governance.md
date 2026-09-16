@@ -29,6 +29,8 @@ whether an explicit subject is an adult as a substitute for provenance.
 - Keep model scratch data in RAM-backed tmpfs.
 - Delete each API upload copy after its job succeeds or fails; retain only the
   metadata-only report unless a documented evaluation-retention rule applies.
+- Opportunistically remove abandoned task-ID upload copies after 24 hours without
+  scanning or modifying operator-controlled source collections.
 - Never copy media or model caches to the MacBook control workspace.
 - Keep dataset and evidence paths out of logs and reports.
 - Encrypt backups and limit Tailscale/Unix permissions to project operators.

@@ -13,6 +13,7 @@ x-service-defaults: &service-defaults
     MAX_QUEUED_JOBS: "25"
     MAX_VIDEO_SECONDS: "300"
     MAX_VIDEO_PIXELS: "33177600"
+    MAX_UPLOAD_RETENTION_SECONDS: "86400"
     DELETE_INPUTS_AFTER_PROCESSING: "true"
     MODERATION_DERIVED_MEDIA_ROOT: /data/challenges
     MODERATION_FEEDBACK_DATABASE: /data/reports/feedback.sqlite

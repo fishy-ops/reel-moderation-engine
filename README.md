@@ -48,7 +48,8 @@ The provided Compose deployment starts:
 - FastAPI on port `8088`
 - one resource-limited RQ worker
 - an isolated Redis instance
-- tmpfs upload and detector scratch areas so transient decoded inputs are never persisted
+- tmpfs multipart-parser and detector scratch areas so transient decoded inputs are
+  never persisted there
 - read-only container roots and model cache, dropped Linux capabilities, and
   `no-new-privileges`
 
@@ -118,6 +119,8 @@ It must only be used with operator-approved, lawfully obtained source media.
 - The deployed worker deletes its opaque upload copy after success or failure. Original
   operator-controlled evaluation sources remain untouched. Set
   `DELETE_INPUTS_AFTER_PROCESSING=false` only under a documented retention policy.
+- Upload admission also removes abandoned opaque upload copies older than 24 hours;
+  this cleanup is restricted to task-ID filenames in `/data/incoming`.
 - Public data must have clear research/commercial rights and confirmed-adult subjects.
 - Do not scrape social platforms or acquire content of unknown provenance or age.
 - Never use this system to infer identity, gender, attractiveness, or other unrelated traits.

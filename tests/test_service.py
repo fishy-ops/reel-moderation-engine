@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from enum import Enum
 from pathlib import Path
 
@@ -247,3 +248,29 @@ def test_probe_rejects_container_without_video_stream(tmp_path, monkeypatch) -> 
         assert str(exc) == "video has no valid visual stream"
     else:  # pragma: no cover - assertion branch
         raise AssertionError("audio-only container was accepted")
+
+
+def test_stale_opaque_upload_cleanup_is_narrow(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(service, "MAX_UPLOAD_RETENTION_SECONDS", 3600)
+    stale = tmp_path / ("a" * 32 + ".mp4")
+    recent = tmp_path / ("b" * 32 + ".mov")
+    operator_named = tmp_path / "operator-source.mp4"
+    unrelated = tmp_path / ("c" * 32 + ".txt")
+    directory = tmp_path / ("d" * 32 + ".mp4")
+    stale.write_bytes(b"stale")
+    recent.write_bytes(b"recent")
+    operator_named.write_bytes(b"operator")
+    unrelated.write_bytes(b"unrelated")
+    directory.mkdir()
+    os.utime(stale, (1_000, 1_000))
+    os.utime(operator_named, (1_000, 1_000))
+    os.utime(unrelated, (1_000, 1_000))
+
+    removed = service._remove_stale_uploads(tmp_path, now=10_000)
+
+    assert removed == 1
+    assert not stale.exists()
+    assert recent.exists()
+    assert operator_named.exists()
+    assert unrelated.exists()
+    assert directory.exists()
