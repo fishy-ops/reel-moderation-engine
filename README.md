@@ -48,13 +48,19 @@ The provided Compose deployment starts:
 - FastAPI on port `8088`
 - one resource-limited RQ worker
 - an isolated Redis instance
-- a tmpfs scratch area so decoded detector inputs are never persisted
+- tmpfs upload and detector scratch areas so transient decoded inputs are never persisted
+- read-only container roots and model cache, dropped Linux capabilities, and
+  `no-new-privileges`
+
+Redis runs directly as its image's unprivileged account so its startup path does not
+require ownership-changing capabilities.
 
 `/health` checks the API and Redis path. `/ready` additionally requires a registered
 worker and available queue capacity. Uploads are rejected before any bytes are stored
 when no worker is available or the configured backlog is full. After upload, a
 15-second local FFmpeg preflight rejects unreadable containers, missing video streams,
 durations over five minutes, and resolutions above 8K before queue admission.
+The default upload limit is 512 MB and remains configurable for trusted deployments.
 
 The API binds to localhost by default. Set `API_BIND_ADDRESS` to Aurora's Tailscale
 address only when direct tailnet access is needed; do not expose it to the public web.

@@ -9,18 +9,27 @@ x-service-defaults: &service-defaults
     MODERATION_SCRATCH_DIR: /moderation-scratch
     MODERATION_BACKEND: nudenet
     MODERATION_BATCH_SIZE: "8"
-    MAX_UPLOAD_BYTES: "2147483648"
+    MAX_UPLOAD_BYTES: "536870912"
     MAX_QUEUED_JOBS: "25"
     MAX_VIDEO_SECONDS: "300"
     MAX_VIDEO_PIXELS: "33177600"
     DELETE_INPUTS_AFTER_PROCESSING: "false"
     MODERATION_DERIVED_MEDIA_ROOT: /data/challenges
     MODERATION_FEEDBACK_DATABASE: /data/reports/feedback.sqlite
+    XDG_CACHE_HOME: /tmp/cache
+    TORCH_HOME: /tmp/torch
   volumes:
     - /tank/archive/reel-moderation/data:/data
-    - /tank/archive/reel-moderation/models:/home/moderator/.cache
+    - /tank/archive/reel-moderation/models:/home/moderator/.cache:ro
   tmpfs:
     - /moderation-scratch:size=2g,mode=0700,uid=10001,gid=10001
+    - /tmp:size=768m,mode=0700,uid=10001,gid=10001,noexec,nosuid,nodev
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
   depends_on:
     redis:
       condition: service_healthy
@@ -52,6 +61,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    user: "999:1000"
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
     healthcheck:
@@ -61,6 +71,12 @@ services:
       retries: 10
     volumes:
       - redis-data:/data
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
     mem_limit: 768m
     cpus: 0.5
     networks:

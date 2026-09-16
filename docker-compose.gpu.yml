@@ -13,6 +13,7 @@ services:
       MODERATION_CLASSIFIER_MODEL: Falconsai/nsfw_image_detection
       MODERATION_CLASSIFIER_MODEL_REVISION: 96cb0d0342c7afb80cab76ecc58b265fa44da256
       HF_HUB_OFFLINE: "1"
+      HF_HOME: /home/moderator/.cache/huggingface
       TRANSFORMERS_OFFLINE: "1"
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
