@@ -28,3 +28,8 @@ reports/
 *.onnx
 *.pt
 *.pth
+*.bin
+*.safetensors
+*.sqlite
+*.sqlite3
+*.db
