@@ -16,7 +16,12 @@ from reel_moderation.evaluation import (
     load_manifest,
     write_report,
 )
-from reel_moderation.feedback import GroundTruth, record_feedback, summarize_feedback
+from reel_moderation.feedback import (
+    GroundTruth,
+    record_feedback,
+    summarize_feedback,
+    summarize_feedback_by_configuration,
+)
 from reel_moderation.fingerprint import (
     VideoFingerprint,
     fingerprint_similarity,
@@ -206,6 +211,16 @@ def feedback_summary_command(
     """Summarize adjudicated feedback outcomes."""
 
     typer.echo(summarize_feedback(database).model_dump_json(indent=2))
+
+
+@app.command("feedback-summary-by-configuration")
+def feedback_summary_by_configuration_command(
+    database: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+) -> None:
+    """Group reviewer outcomes by exact pipeline and decision configuration."""
+
+    summaries = summarize_feedback_by_configuration(database)
+    typer.echo(json.dumps([item.model_dump() for item in summaries], indent=2))
 
 
 @app.command("generate-challenge")

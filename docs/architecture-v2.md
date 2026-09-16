@@ -56,7 +56,9 @@ Meta's PDQ/TMK+PDQF or another audited industry hash implementation.
 ## Reviewer and report feedback
 
 Reviewer feedback stores hashes, predicted verdict, ground truth, optional event
-timestamps, reason, and reviewer identifier in SQLite. It stores no images. Report
+timestamps, reason, reviewer identifier, pipeline source fingerprint, and decision
+configuration fingerprint in SQLite. It stores no images. Outcomes can be grouped by
+exact configuration so feedback from different deployments is not mixed. Report
 priority uses report rate, trusted-report fraction, and recent velocity, capped below
 the automatic-enforcement threshold to resist brigading.
 

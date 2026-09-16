@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -19,6 +20,12 @@ class FeedbackSummary(BaseModel):
     uncertain: int
     false_positive: int
     false_negative: int
+
+
+class ConfigurationFeedbackSummary(FeedbackSummary):
+    pipeline_version: str | None = None
+    pipeline_source_sha256: str | None = None
+    decision_config_sha256: str | None = None
 
 
 def initialize_database(path: Path) -> None:
@@ -38,10 +45,26 @@ def initialize_database(path: Path) -> None:
                 event_end_seconds REAL,
                 reason TEXT NOT NULL,
                 reviewer TEXT NOT NULL,
+                pipeline_version TEXT,
+                pipeline_source_sha256 TEXT,
+                decision_config_sha256 TEXT,
                 created_at TEXT NOT NULL
             )
             """
         )
+        existing_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(moderation_feedback)")
+        }
+        for column in (
+            "pipeline_version",
+            "pipeline_source_sha256",
+            "decision_config_sha256",
+        ):
+            if column not in existing_columns:
+                connection.execute(
+                    f"ALTER TABLE moderation_feedback ADD COLUMN {column} TEXT"
+                )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS feedback_video_idx "
             "ON moderation_feedback(video_sha256)"
@@ -70,6 +93,8 @@ def record_feedback(
     event_start_seconds: float | None = None,
     event_end_seconds: float | None = None,
 ) -> int:
+    if (event_start_seconds is None) != (event_end_seconds is None):
+        raise ValueError("event start and end must be supplied together")
     if event_start_seconds is not None and event_start_seconds < 0:
         raise ValueError("event_start_seconds cannot be negative")
     if (
@@ -80,14 +105,18 @@ def record_feedback(
         raise ValueError("event_end_seconds cannot precede event_start_seconds")
     raw_report = report_path.read_bytes()
     report = json.loads(raw_report)
+    metadata = report.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
     initialize_database(database)
     with sqlite3.connect(database) as connection:
         cursor = connection.execute(
             """
             INSERT INTO moderation_feedback (
                 video_sha256, report_sha256, predicted_verdict, ground_truth,
-                event_start_seconds, event_end_seconds, reason, reviewer, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                event_start_seconds, event_end_seconds, reason, reviewer,
+                pipeline_version, pipeline_source_sha256, decision_config_sha256,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 report["video_sha256"],
@@ -98,17 +127,16 @@ def record_feedback(
                 event_end_seconds,
                 reason,
                 reviewer,
+                metadata.get("pipeline_version"),
+                metadata.get("pipeline_source_sha256"),
+                metadata.get("decision_config_sha256"),
                 datetime.now(UTC).isoformat(),
             ),
         )
         return int(cursor.lastrowid)
 
 
-def summarize_feedback(database: Path) -> FeedbackSummary:
-    with sqlite3.connect(database) as connection:
-        rows = connection.execute(
-            "SELECT predicted_verdict, ground_truth FROM moderation_feedback"
-        ).fetchall()
+def _summarize_rows(rows: list[tuple[str, str]]) -> FeedbackSummary:
     false_positive = sum(
         truth == "safe" and prediction != "APPROVED" for prediction, truth in rows
     )
@@ -123,6 +151,47 @@ def summarize_feedback(database: Path) -> FeedbackSummary:
         false_positive=false_positive,
         false_negative=false_negative,
     )
+
+
+def summarize_feedback(database: Path) -> FeedbackSummary:
+    initialize_database(database)
+    with sqlite3.connect(database) as connection:
+        rows = connection.execute(
+            "SELECT predicted_verdict, ground_truth FROM moderation_feedback"
+        ).fetchall()
+    return _summarize_rows(rows)
+
+
+def summarize_feedback_by_configuration(
+    database: Path,
+) -> list[ConfigurationFeedbackSummary]:
+    initialize_database(database)
+    with sqlite3.connect(database) as connection:
+        rows = connection.execute(
+            """
+            SELECT pipeline_version, pipeline_source_sha256, decision_config_sha256,
+                   predicted_verdict, ground_truth
+            FROM moderation_feedback
+            """
+        ).fetchall()
+    grouped: dict[
+        tuple[str | None, str | None, str | None],
+        list[tuple[str, str]],
+    ] = defaultdict(list)
+    for version, source_digest, config_digest, prediction, truth in rows:
+        grouped[(version, source_digest, config_digest)].append((prediction, truth))
+    summaries: list[ConfigurationFeedbackSummary] = []
+    for key in sorted(grouped, key=lambda item: tuple(value or "" for value in item)):
+        base = _summarize_rows(grouped[key])
+        summaries.append(
+            ConfigurationFeedbackSummary(
+                **base.model_dump(),
+                pipeline_version=key[0],
+                pipeline_source_sha256=key[1],
+                decision_config_sha256=key[2],
+            )
+        )
+    return summaries
 
 
 def report_priority(
