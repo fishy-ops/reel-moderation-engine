@@ -52,6 +52,7 @@ The provided Compose deployment starts:
   never persisted there
 - read-only container roots and model cache, dropped Linux capabilities, and
   `no-new-privileges`
+- digest-pinned Python, GPU, and Redis base images
 
 Redis runs directly as its image's unprivileged account so its startup path does not
 require ownership-changing capabilities.

@@ -24,6 +24,7 @@
 - Service roots and the model cache are read-only, multipart-parser and detector
   scratch storage is tmpfs, Linux capabilities are dropped, and privilege escalation
   is disabled.
+- Python, GPU, and Redis base images are pinned by immutable registry digest.
 - Opaque API upload copies are deleted after either successful or failed processing.
 - Abandoned upload copies with valid task-ID names are removed after 24 hours on the
   next admission attempt.

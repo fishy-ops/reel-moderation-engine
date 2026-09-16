@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.12.0-cuda13.0-cudnn9-runtime
+FROM pytorch/pytorch:2.12.0-cuda13.0-cudnn9-runtime@sha256:c263514402c85b4203311883fbef75cc48c4dcc01bbc65bcd2435348788a34e7
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
