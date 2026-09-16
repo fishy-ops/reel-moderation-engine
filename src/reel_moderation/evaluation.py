@@ -5,9 +5,20 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from reel_moderation.schema import ModerationReport, Verdict
+
+
+class EventInterval(BaseModel):
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def bounds_are_ordered(self) -> EventInterval:
+        if self.end_seconds < self.start_seconds:
+            raise ValueError("event end cannot precede event start")
+        return self
 
 
 class EvaluationCase(BaseModel):
@@ -16,6 +27,13 @@ class EvaluationCase(BaseModel):
     expected_violation: bool
     split: str = "test"
     slices: list[str] = Field(default_factory=list)
+    events: list[EventInterval] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def events_require_a_violation(self) -> EvaluationCase:
+        if self.events and not self.expected_violation:
+            raise ValueError("safe cases cannot declare a violation event")
+        return self
 
 
 class MetricCounts(BaseModel):
@@ -60,6 +78,12 @@ class EvaluationResult(BaseModel):
     duration_seconds: float
     processing_seconds: float
     slices: list[str]
+    expected_events: list[EventInterval] = Field(default_factory=list)
+    localized_events: int = 0
+    missed_events: int = 0
+    first_detection_latencies_seconds: list[float] = Field(default_factory=list)
+    on_target_timestamps: int = 0
+    off_target_timestamps: int = 0
 
 
 class EvaluationReport(BaseModel):
@@ -129,15 +153,100 @@ def _counts(items: Iterable[tuple[EvaluationCase, ModerationReport]]) -> MetricC
     return counts
 
 
+def _event_outcome(
+    case: EvaluationCase,
+    report: ModerationReport,
+    tolerance_seconds: float,
+) -> tuple[int, int, list[float], int, int]:
+    if not case.events:
+        return 0, 0, [], 0, 0
+    windows = [
+        (
+            max(0.0, event.start_seconds - tolerance_seconds),
+            event.end_seconds + tolerance_seconds,
+        )
+        for event in case.events
+    ]
+    on_target_timestamps = [
+        timestamp
+        for timestamp in report.flagged_timestamps
+        if any(lower <= timestamp <= upper for lower, upper in windows)
+    ]
+    latencies: list[float] = []
+    for event, (lower, upper) in zip(case.events, windows, strict=True):
+        matching = [
+            timestamp
+            for timestamp in report.flagged_timestamps
+            if lower <= timestamp <= upper
+        ]
+        if matching:
+            latencies.append(max(0.0, min(matching) - event.start_seconds))
+    return (
+        len(latencies),
+        len(case.events) - len(latencies),
+        latencies,
+        len(on_target_timestamps),
+        len(report.flagged_timestamps) - len(on_target_timestamps),
+    )
+
+
+def _event_metrics(
+    items: Iterable[tuple[EvaluationCase, ModerationReport]],
+    tolerance_seconds: float,
+) -> dict[str, int | float | None]:
+    outcomes = [
+        _event_outcome(case, report, tolerance_seconds)
+        for case, report in items
+        if case.events
+    ]
+    localized = sum(outcome[0] for outcome in outcomes)
+    missed = sum(outcome[1] for outcome in outcomes)
+    latencies = [latency for outcome in outcomes for latency in outcome[2]]
+    on_target = sum(outcome[3] for outcome in outcomes)
+    off_target = sum(outcome[4] for outcome in outcomes)
+    timestamp_total = on_target + off_target
+    return {
+        "event_cases": localized + missed,
+        "localized_events": localized,
+        "event_localization_recall": (
+            localized / (localized + missed) if localized + missed else None
+        ),
+        "mean_first_detection_latency_seconds": (
+            sum(latencies) / len(latencies) if latencies else None
+        ),
+        "on_target_timestamps": on_target,
+        "off_target_timestamps": off_target,
+        "timestamp_precision": on_target / timestamp_total if timestamp_total else None,
+    }
+
+
+def _metrics(
+    items: list[tuple[EvaluationCase, ModerationReport]],
+    event_tolerance_seconds: float,
+) -> dict[str, int | float | None]:
+    return {
+        **_counts(items).serialized(),
+        **_event_metrics(items, event_tolerance_seconds),
+    }
+
+
 def evaluate_cases(
     cases: list[EvaluationCase],
     moderate: Callable[[Path], ModerationReport],
     split: str = "test",
+    event_tolerance_seconds: float = 0.5,
 ) -> EvaluationReport:
+    if event_tolerance_seconds < 0:
+        raise ValueError("event tolerance cannot be negative")
     completed: list[tuple[EvaluationCase, ModerationReport]] = []
     results: list[EvaluationResult] = []
     for case in cases:
         report = moderate(case.video)
+        localized, missed, latencies, on_target, off_target = _event_outcome(
+            case,
+            report,
+            event_tolerance_seconds,
+        )
         completed.append((case, report))
         results.append(
             EvaluationResult(
@@ -148,6 +257,12 @@ def evaluate_cases(
                 duration_seconds=report.duration_seconds,
                 processing_seconds=report.processing_seconds,
                 slices=case.slices,
+                expected_events=case.events,
+                localized_events=localized,
+                missed_events=missed,
+                first_detection_latencies_seconds=latencies,
+                on_target_timestamps=on_target,
+                off_target_timestamps=off_target,
             )
         )
 
@@ -160,9 +275,10 @@ def evaluate_cases(
     processing_seconds = sum(report.processing_seconds for _, report in completed)
     return EvaluationReport(
         split=split,
-        metrics=_counts(completed).serialized(),
+        metrics=_metrics(completed, event_tolerance_seconds),
         per_slice={
-            name: _counts(items).serialized() for name, items in sorted(slice_items.items())
+            name: _metrics(items, event_tolerance_seconds)
+            for name, items in sorted(slice_items.items())
         },
         media_seconds=media_seconds,
         processing_seconds=processing_seconds,
@@ -207,11 +323,29 @@ def compare_evaluation_reports(
 
     failures: list[str] = []
     baseline_cases = {
-        (result.case_id, result.video_sha256, result.expected_violation)
+        (
+            result.case_id,
+            result.video_sha256,
+            result.expected_violation,
+            tuple(
+                (event.start_seconds, event.end_seconds)
+                for event in result.expected_events
+            ),
+            tuple(sorted(result.slices)),
+        )
         for result in baseline.results
     }
     candidate_cases = {
-        (result.case_id, result.video_sha256, result.expected_violation)
+        (
+            result.case_id,
+            result.video_sha256,
+            result.expected_violation,
+            tuple(
+                (event.start_seconds, event.end_seconds)
+                for event in result.expected_events
+            ),
+            tuple(sorted(result.slices)),
+        )
         for result in candidate.results
     }
     if baseline_cases != candidate_cases:
@@ -219,7 +353,14 @@ def compare_evaluation_reports(
     if baseline.split != candidate.split:
         failures.append("baseline and candidate use different evaluation splits")
 
-    metrics = ("recall", "precision", "false_positive_rate", "errors")
+    metrics = (
+        "recall",
+        "precision",
+        "false_positive_rate",
+        "errors",
+        "event_localization_recall",
+        "timestamp_precision",
+    )
     overall_delta = {
         metric: _metric_delta(baseline.metrics, candidate.metrics, metric)
         for metric in metrics
@@ -242,6 +383,16 @@ def compare_evaluation_reports(
     error_delta = overall_delta["errors"]
     if error_delta is not None and error_delta > 0:
         failures.append(f"overall processing errors increased by {int(error_delta)}")
+    for metric, label in (
+        ("event_localization_recall", "event-localization recall"),
+        ("timestamp_precision", "timestamp precision"),
+    ):
+        delta = overall_delta[metric]
+        if delta is not None and delta < -max_recall_drop:
+            failures.append(
+                f"overall {label} dropped by {-delta:.6f}, above "
+                f"{max_recall_drop:.6f}"
+            )
 
     per_slice_delta: dict[str, dict[str, float | None]] = {}
     all_slices = sorted(set(baseline.per_slice) | set(candidate.per_slice))
@@ -280,6 +431,16 @@ def compare_evaluation_reports(
                 f"slice {slice_name!r} processing errors increased by "
                 f"{int(slice_error_delta)}"
             )
+        for metric, label in (
+            ("event_localization_recall", "event-localization recall"),
+            ("timestamp_precision", "timestamp precision"),
+        ):
+            delta = deltas[metric]
+            if delta is not None and delta < -max_recall_drop:
+                failures.append(
+                    f"slice {slice_name!r} {label} dropped by "
+                    f"{-delta:.6f}, above {max_recall_drop:.6f}"
+                )
 
     baseline_throughput = baseline.throughput_x_realtime
     candidate_throughput = candidate.throughput_x_realtime

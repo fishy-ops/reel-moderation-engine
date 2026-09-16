@@ -95,6 +95,7 @@ def evaluate(
         Path, typer.Option(help="Ephemeral directory for decoded detector inputs")
     ] = Path("/moderation-scratch"),
     review_threshold: Annotated[float, typer.Option(min=0, max=1)] = 0.42,
+    event_tolerance_seconds: Annotated[float, typer.Option(min=0, max=5)] = 0.5,
 ) -> None:
     """Evaluate a labeled JSONL manifest without copying its media."""
 
@@ -106,7 +107,12 @@ def evaluate(
         scratch_dir=scratch_dir if backend == "nudenet" else None,
     )
     engine = ModerationEngine(config)
-    report = evaluate_cases(load_manifest(manifest, split=split), engine.moderate, split=split)
+    report = evaluate_cases(
+        load_manifest(manifest, split=split),
+        engine.moderate,
+        split=split,
+        event_tolerance_seconds=event_tolerance_seconds,
+    )
     write_report(report, output)
     typer.echo(str(output))
 

@@ -11,7 +11,13 @@ from reel_moderation.evaluation import (
 from reel_moderation.schema import ModerationReport, Verdict
 
 
-def _report(name: str, verdict: Verdict, duration: float = 10, processing: float = 2):
+def _report(
+    name: str,
+    verdict: Verdict,
+    duration: float = 10,
+    processing: float = 2,
+    timestamps: list[float] | None = None,
+):
     return ModerationReport(
         video_name=name,
         video_sha256=f"hash-{name}",
@@ -20,6 +26,7 @@ def _report(name: str, verdict: Verdict, duration: float = 10, processing: float
         total_frames_decoded=300,
         total_frames_analyzed=20,
         verdict=verdict,
+        flagged_timestamps=timestamps or [],
         backend="fake",
         processing_seconds=processing,
     )
@@ -135,3 +142,75 @@ def test_processing_error_cannot_hide_recall_regression() -> None:
     assert comparison.passed is False
     assert comparison.overall_delta["recall"] is None
     assert "overall processing errors increased by 1" in comparison.failures
+
+
+def test_event_localization_counts_on_and_off_target_timestamps() -> None:
+    cases = [
+        EvaluationCase(
+            id="event",
+            video=Path("event.mp4"),
+            expected_violation=True,
+            events=[{"start_seconds": 2.0, "end_seconds": 3.0}],
+            slices=["brief"],
+        )
+    ]
+    report = _report(
+        "event.mp4",
+        Verdict.FLAG_FOR_HUMAN_REVIEW,
+        timestamps=[0.5, 1.6, 2.4, 3.6],
+    )
+
+    result = evaluate_cases(
+        cases,
+        lambda path: report,
+        event_tolerance_seconds=0.5,
+    )
+
+    assert result.metrics["event_localization_recall"] == 1
+    assert result.metrics["on_target_timestamps"] == 2
+    assert result.metrics["off_target_timestamps"] == 2
+    assert result.metrics["timestamp_precision"] == 0.5
+    assert result.results[0].first_detection_latencies_seconds == [0]
+
+
+def test_video_level_review_without_timestamp_is_not_claimed_as_localized() -> None:
+    cases = [
+        EvaluationCase(
+            id="semantic-only",
+            video=Path("semantic-only.mp4"),
+            expected_violation=True,
+            events=[{"start_seconds": 2.0, "end_seconds": 3.0}],
+        )
+    ]
+    report = _report("semantic-only.mp4", Verdict.FLAG_FOR_HUMAN_REVIEW)
+
+    result = evaluate_cases(cases, lambda path: report)
+
+    assert result.metrics["recall"] == 1
+    assert result.metrics["event_localization_recall"] == 0
+    assert result.results[0].missed_events == 1
+
+
+def test_multiple_events_are_scored_independently() -> None:
+    case = EvaluationCase(
+        id="multiple",
+        video=Path("multiple.mp4"),
+        expected_violation=True,
+        events=[
+            {"start_seconds": 0.6, "end_seconds": 0.8},
+            {"start_seconds": 5.8, "end_seconds": 6.2},
+        ],
+    )
+    report = _report(
+        "multiple.mp4",
+        Verdict.FLAG_FOR_HUMAN_REVIEW,
+        timestamps=[0.7, 9.0],
+    )
+
+    result = evaluate_cases([case], lambda path: report, event_tolerance_seconds=0.1)
+
+    assert result.metrics["event_cases"] == 2
+    assert result.metrics["localized_events"] == 1
+    assert result.metrics["event_localization_recall"] == 0.5
+    assert result.results[0].localized_events == 1
+    assert result.results[0].missed_events == 1

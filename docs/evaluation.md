@@ -40,7 +40,7 @@ them into the repository.
 
 ```json
 {"id":"safe-001","video":"safe/safe-001.mp4","expected_violation":false,"split":"test","slices":["ordinary"]}
-{"id":"flash-001","video":"challenge/flash-001.mp4","expected_violation":true,"split":"test","slices":["one-frame","30fps"]}
+{"id":"flash-001","video":"challenge/flash-001.mp4","expected_violation":true,"events":[{"start_seconds":2.0,"end_seconds":2.1}],"split":"test","slices":["one-frame","30fps"]}
 ```
 
 Run the held-out split on Aurora:
@@ -52,9 +52,13 @@ reel-moderate evaluate /data/eval/manifest.jsonl \
   --scratch-dir /moderation-scratch
 ```
 
-The output contains only input hashes, expected labels, verdicts, aggregate metrics,
-slice metrics, and throughput. A review verdict counts as a positive prediction when
-computing the high-recall gate; report review and auto-block counts separately.
+The output contains only input hashes, expected labels and event bounds, verdicts,
+aggregate metrics, slice metrics, and throughput. A review verdict counts as a positive
+prediction when computing the high-recall gate; report review and auto-block counts
+separately. Event-labeled cases also report event-localization recall, first-detection
+latency, on-target timestamps, off-target timestamps, and timestamp precision. A
+video-level semantic review with no primary evidence remains a video true positive but
+is correctly counted as not localized.
 
 Compare a candidate report with its approved baseline before deployment. By default,
 the gate allows no recall or false-positive-rate regression, checks every shared slice,
