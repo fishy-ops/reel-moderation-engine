@@ -7,8 +7,8 @@ and verified-adult subjects for every explicit photographic example.
 | Asset | Intended use | Status | Reason |
 | --- | --- | --- | --- |
 | NudeNet 3.4.2 bundled weights | Prototype anatomical detector | Prototype only | Redistributable package is available, but training-data documentation is insufficient for a production claim. |
-| Google SigLIP 2 base patch16-224 | Candidate semantic exposed-vs-covered verifier | Approved for audit evaluation | Google-published model files and code are Apache-2.0; zero-shot policy calibration is still required before enforcement. |
-| Falconsai `nsfw_image_detection` | Independent binary verifier | Approved for audit evaluation | The published weights are Apache-2.0; training-set provenance and demographic evaluation remain insufficient for enforcement. |
+| Google SigLIP 2 base patch16-224, revision `75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2` | Candidate semantic exposed-vs-covered verifier | Approved for audit evaluation | Google-published model files and code are Apache-2.0; zero-shot policy calibration is still required before enforcement. The deployed worker is pinned to this cached revision. |
+| Falconsai `nsfw_image_detection`, revision `96cb0d0342c7afb80cab76ecc58b265fa44da256` | Independent binary verifier | Approved for audit evaluation | The published weights are Apache-2.0; training-set provenance and demographic evaluation remain insufficient for enforcement. The deployed worker is pinned to this cached revision. |
 | Cashbox NSFW Image Level v6 | Possible calibration data | Rejected for now | The card labels content 18+, but source sites are undisclosed and consent/adult-verification evidence is absent. |
 | UnsafeSceneDetection | Possible research evaluation | Hold | Gated and non-commercial; access requires identity/affiliation terms and explicit operator acceptance. |
 | Public Domain 12M artistic subset | Contextual false-positive evaluation | Candidate | Public-domain provenance is documented and non-artistic photographic nudity was filtered; use only a small license-verified subset. |

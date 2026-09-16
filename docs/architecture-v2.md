@@ -29,7 +29,8 @@ viewer reports only prioritize review and never auto-block content.
 
 The verifier evaluates candidate regions in memory. Hugging Face model files live in
 Aurora's model volume. Semantic regions from one detector batch are scored together to
-reduce GPU launch overhead. No decoded frames are retained.
+reduce GPU launch overhead. Both model revisions are pinned, recorded in the report
+configuration, and loaded offline from Aurora's cache. No decoded frames are retained.
 
 The initial operator calibration showed why one-way review assistance matters: SigLIP 2 correctly
 recognized sustained covered-clothing evidence in the known false positive, but also

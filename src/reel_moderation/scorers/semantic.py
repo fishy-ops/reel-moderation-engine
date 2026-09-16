@@ -57,7 +57,7 @@ class SemanticVerifier(Protocol):
 class SiglipVerifier:
     name = "siglip2"
 
-    def __init__(self, model_id: str) -> None:
+    def __init__(self, model_id: str, revision: str | None = None) -> None:
         try:
             import torch
             from transformers import AutoModel, AutoProcessor
@@ -70,10 +70,11 @@ class SiglipVerifier:
             raise RuntimeError("SigLIP verifier requires CUDA in the production worker")
         self._torch = torch
         self._device = torch.device("cuda")
-        self._processor = AutoProcessor.from_pretrained(model_id)
+        self._processor = AutoProcessor.from_pretrained(model_id, revision=revision)
         self._model = AutoModel.from_pretrained(
             model_id,
             dtype=torch.float16,
+            revision=revision,
         ).to(self._device)
         self._model.eval()
         self._prompts = [*EXPOSED_PROMPTS, *COVERED_PROMPTS, *OTHER_PROMPTS]
@@ -134,7 +135,7 @@ class SiglipVerifier:
 class FalconNsfwVerifier:
     name = "falcon-nsfw"
 
-    def __init__(self, model_id: str) -> None:
+    def __init__(self, model_id: str, revision: str | None = None) -> None:
         try:
             import torch
             from transformers import AutoImageProcessor, AutoModelForImageClassification
@@ -147,10 +148,11 @@ class FalconNsfwVerifier:
             raise RuntimeError("Falcon NSFW verifier requires CUDA in production")
         self._torch = torch
         self._device = torch.device("cuda")
-        self._processor = AutoImageProcessor.from_pretrained(model_id)
+        self._processor = AutoImageProcessor.from_pretrained(model_id, revision=revision)
         self._model = AutoModelForImageClassification.from_pretrained(
             model_id,
             dtype=torch.float16,
+            revision=revision,
         ).to(self._device)
         self._model.eval()
         labels = {
@@ -200,9 +202,18 @@ class FalconNsfwVerifier:
 class EnsembleVerifier:
     name = "siglip2+falcon-nsfw"
 
-    def __init__(self, siglip_model_id: str, classifier_model_id: str) -> None:
-        self._siglip = SiglipVerifier(siglip_model_id)
-        self._classifier = FalconNsfwVerifier(classifier_model_id)
+    def __init__(
+        self,
+        siglip_model_id: str,
+        classifier_model_id: str,
+        siglip_model_revision: str | None = None,
+        classifier_model_revision: str | None = None,
+    ) -> None:
+        self._siglip = SiglipVerifier(siglip_model_id, siglip_model_revision)
+        self._classifier = FalconNsfwVerifier(
+            classifier_model_id,
+            classifier_model_revision,
+        )
 
     def score(self, regions: list[RGBFrame]) -> SemanticScore:
         return self.score_many([regions])[0]

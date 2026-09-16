@@ -18,6 +18,13 @@ def test_decision_fingerprint_changes_with_policy() -> None:
     assert decision_config_sha256(baseline) != decision_config_sha256(candidate)
 
 
+def test_decision_fingerprint_changes_with_model_revision() -> None:
+    baseline = EngineConfig()
+    candidate = EngineConfig(semantic_verifier={"model_revision": "different"})
+
+    assert decision_config_sha256(baseline) != decision_config_sha256(candidate)
+
+
 def test_source_fingerprint_changes_with_source_bytes(tmp_path: Path) -> None:
     source = tmp_path / "module.py"
     source.write_text("value = 1\n", encoding="utf-8")

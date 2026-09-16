@@ -38,7 +38,9 @@ class PolicyConfig(BaseModel):
 class SemanticVerifierConfig(BaseModel):
     backend: Literal["none", "siglip", "ensemble"] = "none"
     model_id: str = "google/siglip2-base-patch16-224"
+    model_revision: str = "75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2"
     classifier_model_id: str = "Falconsai/nsfw_image_detection"
+    classifier_model_revision: str = "96cb0d0342c7afb80cab76ecc58b265fa44da256"
     mode: Literal["audit", "review", "enforce"] = "audit"
     trigger_threshold: float = Field(default=0.32, ge=0, le=1)
     baseline_interval_seconds: float = Field(default=1.0, gt=0, le=10)

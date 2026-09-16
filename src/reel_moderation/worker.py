@@ -20,8 +20,16 @@ def _engine_from_environment() -> ModerationEngine:
             "model_id": os.environ.get(
                 "MODERATION_SEMANTIC_MODEL", "google/siglip2-base-patch16-224"
             ),
+            "model_revision": os.environ.get(
+                "MODERATION_SEMANTIC_MODEL_REVISION",
+                "75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2",
+            ),
             "classifier_model_id": os.environ.get(
                 "MODERATION_CLASSIFIER_MODEL", "Falconsai/nsfw_image_detection"
+            ),
+            "classifier_model_revision": os.environ.get(
+                "MODERATION_CLASSIFIER_MODEL_REVISION",
+                "96cb0d0342c7afb80cab76ecc58b265fa44da256",
             ),
         },
         policy=PolicyConfig(

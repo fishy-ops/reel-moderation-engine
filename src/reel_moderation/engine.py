@@ -61,11 +61,16 @@ class ModerationEngine:
                 raise ValueError("scratch_dir must be configured for the NudeNet backend")
             semantic_verifier = None
             if self.config.semantic_verifier.backend == "siglip":
-                semantic_verifier = SiglipVerifier(self.config.semantic_verifier.model_id)
+                semantic_verifier = SiglipVerifier(
+                    self.config.semantic_verifier.model_id,
+                    self.config.semantic_verifier.model_revision,
+                )
             elif self.config.semantic_verifier.backend == "ensemble":
                 semantic_verifier = EnsembleVerifier(
                     self.config.semantic_verifier.model_id,
                     self.config.semantic_verifier.classifier_model_id,
+                    self.config.semantic_verifier.model_revision,
+                    self.config.semantic_verifier.classifier_model_revision,
                 )
             return NudeNetScorer(
                 scratch_dir=self.config.scratch_dir,
