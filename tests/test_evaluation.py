@@ -53,6 +53,26 @@ def test_evaluation_metrics_count_review_as_positive() -> None:
     assert result.throughput_x_realtime == 5
 
 
+def test_safe_review_is_separate_from_auto_block_false_positive() -> None:
+    cases = [
+        EvaluationCase(
+            id="revealing-safe",
+            video=Path("revealing-safe.mp4"),
+            expected_violation=False,
+            slices=["revealing-clothing"],
+        )
+    ]
+    report = _report("revealing-safe.mp4", Verdict.FLAG_FOR_HUMAN_REVIEW)
+
+    result = evaluate_cases(cases, lambda path: report)
+
+    assert result.metrics["false_positive_rate"] == 1
+    assert result.metrics["safe_review_rate"] == 1
+    assert result.metrics["review_false_positive"] == 1
+    assert result.metrics["auto_block_false_positive_rate"] == 0
+    assert result.metrics["auto_block_false_positive"] == 0
+
+
 def test_manifest_resolves_relative_paths_and_rejects_duplicate_ids(tmp_path: Path) -> None:
     manifest = tmp_path / "manifest.jsonl"
     manifest.write_text(
@@ -251,3 +271,30 @@ def test_comparison_rejects_worse_onset_localization() -> None:
         0.3
     )
     assert any("onset error increased" in item for item in comparison.failures)
+
+
+def test_comparison_rejects_promoting_safe_review_to_auto_block() -> None:
+    case = EvaluationCase(
+        id="revealing-safe",
+        video=Path("revealing-safe.mp4"),
+        expected_violation=False,
+        slices=["revealing-clothing"],
+    )
+    baseline = evaluate_cases(
+        [case],
+        lambda path: _report(path.name, Verdict.FLAG_FOR_HUMAN_REVIEW),
+    )
+    candidate = evaluate_cases(
+        [case],
+        lambda path: _report(path.name, Verdict.AUTO_BLOCK),
+    )
+
+    comparison = compare_evaluation_reports(baseline, candidate)
+
+    assert comparison.passed is False
+    assert comparison.overall_delta["false_positive_rate"] == 0
+    assert comparison.overall_delta["auto_block_false_positive_rate"] == 1
+    assert any(
+        "auto-block false-positive rate increased" in item
+        for item in comparison.failures
+    )

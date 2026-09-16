@@ -44,6 +44,8 @@ class MetricCounts(BaseModel):
     false_negative: int = 0
     review: int = 0
     auto_block: int = 0
+    review_false_positive: int = 0
+    auto_block_false_positive: int = 0
     errors: int = 0
 
     @property
@@ -61,12 +63,24 @@ class MetricCounts(BaseModel):
         denominator = self.false_positive + self.true_negative
         return self.false_positive / denominator if denominator else None
 
+    @property
+    def safe_review_rate(self) -> float | None:
+        denominator = self.false_positive + self.true_negative
+        return self.review_false_positive / denominator if denominator else None
+
+    @property
+    def auto_block_false_positive_rate(self) -> float | None:
+        denominator = self.false_positive + self.true_negative
+        return self.auto_block_false_positive / denominator if denominator else None
+
     def serialized(self) -> dict[str, int | float | None]:
         return {
             **self.model_dump(),
             "recall": self.recall,
             "precision": self.precision,
             "false_positive_rate": self.false_positive_rate,
+            "safe_review_rate": self.safe_review_rate,
+            "auto_block_false_positive_rate": self.auto_block_false_positive_rate,
         }
 
 
@@ -141,8 +155,12 @@ def _counts(items: Iterable[tuple[EvaluationCase, ModerationReport]]) -> MetricC
         predicted_positive = report.verdict != Verdict.APPROVED
         if report.verdict == Verdict.FLAG_FOR_HUMAN_REVIEW:
             counts.review += 1
+            if not case.expected_violation:
+                counts.review_false_positive += 1
         elif report.verdict == Verdict.AUTO_BLOCK:
             counts.auto_block += 1
+            if not case.expected_violation:
+                counts.auto_block_false_positive += 1
         if predicted_positive and case.expected_violation:
             counts.true_positive += 1
         elif predicted_positive:
@@ -374,6 +392,7 @@ def compare_evaluation_reports(
         "recall",
         "precision",
         "false_positive_rate",
+        "auto_block_false_positive_rate",
         "errors",
         "event_localization_recall",
         "timestamp_precision",
@@ -396,6 +415,18 @@ def compare_evaluation_reports(
         failures.append(
             "overall false-positive rate increased by "
             f"{false_positive_delta:.6f}, above "
+            f"{max_false_positive_rate_increase:.6f}"
+        )
+    auto_block_false_positive_delta = overall_delta[
+        "auto_block_false_positive_rate"
+    ]
+    if (
+        auto_block_false_positive_delta is not None
+        and auto_block_false_positive_delta > max_false_positive_rate_increase
+    ):
+        failures.append(
+            "overall auto-block false-positive rate increased by "
+            f"{auto_block_false_positive_delta:.6f}, above "
             f"{max_false_positive_rate_increase:.6f}"
         )
     error_delta = overall_delta["errors"]
@@ -451,6 +482,19 @@ def compare_evaluation_reports(
             failures.append(
                 f"slice {slice_name!r} false-positive rate increased by "
                 f"{slice_false_positive_delta:.6f}, above "
+                f"{max_false_positive_rate_increase:.6f}"
+            )
+        slice_auto_block_false_positive_delta = deltas[
+            "auto_block_false_positive_rate"
+        ]
+        if (
+            slice_auto_block_false_positive_delta is not None
+            and slice_auto_block_false_positive_delta
+            > max_false_positive_rate_increase
+        ):
+            failures.append(
+                f"slice {slice_name!r} auto-block false-positive rate increased by "
+                f"{slice_auto_block_false_positive_delta:.6f}, above "
                 f"{max_false_positive_rate_increase:.6f}"
             )
         slice_error_delta = deltas["errors"]

@@ -32,6 +32,10 @@ Report frame-, event-, and video-level precision/recall; review rate; auto-block
 rate; detection latency; decoded/analyzed-frame ratio; and wall-clock throughput.
 Never tune and report against the same split. Hash inputs to prevent split leakage.
 
+Safe review referrals and unsafe automatic blocks are counted separately. In
+particular, a revealing-clothing control sent to review is a review false positive but
+not an auto-block false positive. The regression gate forbids either rate from rising.
+
 ## Reproducible manifest runner
 
 Keep media on Aurora and create a JSONL manifest beside it. Relative video paths are
