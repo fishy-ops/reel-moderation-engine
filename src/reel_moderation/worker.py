@@ -45,7 +45,7 @@ def _engine_from_environment() -> ModerationEngine:
 def moderate_job(video_path: str) -> dict:
     path = Path(video_path).resolve()
     data_dir = Path(os.environ.get("MODERATION_DATA_DIR", "/data")).resolve()
-    delete_inputs = os.environ.get("DELETE_INPUTS_AFTER_PROCESSING", "false").lower() == "true"
+    delete_inputs = os.environ.get("DELETE_INPUTS_AFTER_PROCESSING", "true").lower() == "true"
     if data_dir not in path.parents:
         raise ValueError("video path is outside the configured data directory")
 

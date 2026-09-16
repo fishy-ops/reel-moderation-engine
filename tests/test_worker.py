@@ -59,6 +59,15 @@ def test_job_deletes_input_when_retention_is_disabled(tmp_path: Path, monkeypatc
     assert not video.exists()
 
 
+def test_job_deletes_input_by_default(tmp_path: Path, monkeypatch) -> None:
+    video = configure_job(tmp_path, monkeypatch)
+    monkeypatch.delenv("DELETE_INPUTS_AFTER_PROCESSING")
+
+    worker.moderate_job(str(video))
+
+    assert not video.exists()
+
+
 def test_failed_job_still_deletes_configured_input(tmp_path: Path, monkeypatch) -> None:
     video = configure_job(tmp_path, monkeypatch, delete=True)
 

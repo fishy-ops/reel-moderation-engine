@@ -115,8 +115,9 @@ It must only be used with operator-approved, lawfully obtained source media.
 - Raw videos, frames, datasets, weights, reports, and model caches are Git-ignored.
 - Detector scratch files live in tmpfs and are deleted after every frame.
 - Reports contain timestamps, labels, boxes, and scores, not evidence images.
-- Uploaded videos are retained by default until an operator applies a reviewed
-  retention policy; opt-in automatic deletion is available through configuration.
+- The deployed worker deletes its opaque upload copy after success or failure. Original
+  operator-controlled evaluation sources remain untouched. Set
+  `DELETE_INPUTS_AFTER_PROCESSING=false` only under a documented retention policy.
 - Public data must have clear research/commercial rights and confirmed-adult subjects.
 - Do not scrape social platforms or acquire content of unknown provenance or age.
 - Never use this system to infer identity, gender, attractiveness, or other unrelated traits.

@@ -13,7 +13,7 @@ x-service-defaults: &service-defaults
     MAX_QUEUED_JOBS: "25"
     MAX_VIDEO_SECONDS: "300"
     MAX_VIDEO_PIXELS: "33177600"
-    DELETE_INPUTS_AFTER_PROCESSING: "false"
+    DELETE_INPUTS_AFTER_PROCESSING: "true"
     MODERATION_DERIVED_MEDIA_ROOT: /data/challenges
     MODERATION_FEEDBACK_DATABASE: /data/reports/feedback.sqlite
     XDG_CACHE_HOME: /tmp/cache
@@ -54,6 +54,8 @@ services:
         "rq.worker.SimpleWorker",
         "--url",
         "redis://redis:6379/0",
+        "--worker-ttl",
+        "60",
         "moderation",
       ]
     mem_limit: 12g

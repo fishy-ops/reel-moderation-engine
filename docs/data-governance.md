@@ -27,6 +27,8 @@ whether an explicit subject is an adult as a substitute for provenance.
 
 - Store all media only under Aurora's dedicated ZFS dataset.
 - Keep model scratch data in RAM-backed tmpfs.
+- Delete each API upload copy after its job succeeds or fails; retain only the
+  metadata-only report unless a documented evaluation-retention rule applies.
 - Never copy media or model caches to the MacBook control workspace.
 - Keep dataset and evidence paths out of logs and reports.
 - Encrypt backups and limit Tailscale/Unix permissions to project operators.
