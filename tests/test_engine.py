@@ -75,6 +75,9 @@ def test_engine_builds_report_without_persisting_frames(tmp_path, monkeypatch) -
     assert report.total_frames_analyzed == 3
     assert report.flagged_timestamps == [0.1, 0.2]
     assert len(report.video_sha256) == 64
+    assert report.metadata["pipeline_version"] == "0.1.0"
+    assert len(report.metadata["pipeline_source_sha256"]) == 64
+    assert len(report.metadata["decision_config_sha256"]) == 64
     assert not list(tmp_path.glob("*.jpg"))
 
 

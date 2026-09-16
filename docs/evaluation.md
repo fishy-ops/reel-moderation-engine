@@ -55,3 +55,18 @@ reel-moderate evaluate /data/eval/manifest.jsonl \
 The output contains only input hashes, expected labels, verdicts, aggregate metrics,
 slice metrics, and throughput. A review verdict counts as a positive prediction when
 computing the high-recall gate; report review and auto-block counts separately.
+
+Compare a candidate report with its approved baseline before deployment. By default,
+the gate allows no recall or false-positive-rate regression, checks every shared slice,
+requires exactly the same labeled cases, and allows at most a 10% throughput loss:
+
+```bash
+reel-moderate compare-evaluations \
+  /data/reports/evaluation-approved.json \
+  /data/reports/evaluation-candidate.json
+```
+
+The command emits a media-free JSON comparison and exits nonzero when the candidate
+regresses. Each moderation report also records the pipeline version, a deterministic
+fingerprint of the installed pipeline source, and a canonical SHA-256 fingerprint of
+all decision-affecting configuration.

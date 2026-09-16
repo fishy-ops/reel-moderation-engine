@@ -7,6 +7,11 @@ from pathlib import Path
 
 from reel_moderation.aggregator import TemporalAggregator, summarize_labels
 from reel_moderation.config import EngineConfig
+from reel_moderation.provenance import (
+    PIPELINE_VERSION,
+    decision_config_sha256,
+    pipeline_source_sha256,
+)
 from reel_moderation.sampling import AdaptiveSampler, FrameCandidate
 from reel_moderation.schema import FrameEvidence, ModerationReport, Verdict
 from reel_moderation.scorers.base import DryRunScorer, FrameScorer
@@ -172,6 +177,9 @@ class ModerationEngine:
             processing_seconds=round(time.monotonic() - started, 6),
             warnings=sorted(set(warnings)),
             metadata={
+                "pipeline_version": PIPELINE_VERSION,
+                "pipeline_source_sha256": pipeline_source_sha256(),
+                "decision_config_sha256": decision_config_sha256(self.config),
                 "label_counts": summarize_labels(risky_evidence),
                 "sampling": self.config.sampling.model_dump(mode="json"),
                 "policy": self.config.policy.model_dump(mode="json"),

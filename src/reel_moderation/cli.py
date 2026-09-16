@@ -9,7 +9,13 @@ import typer
 from reel_moderation.challenges import ChallengeVariant, generate_challenge
 from reel_moderation.config import EngineConfig, PolicyConfig
 from reel_moderation.engine import ModerationEngine
-from reel_moderation.evaluation import evaluate_cases, load_manifest, write_report
+from reel_moderation.evaluation import (
+    EvaluationReport,
+    compare_evaluation_reports,
+    evaluate_cases,
+    load_manifest,
+    write_report,
+)
 from reel_moderation.feedback import GroundTruth, record_feedback, summarize_feedback
 from reel_moderation.fingerprint import (
     VideoFingerprint,
@@ -103,6 +109,36 @@ def evaluate(
     report = evaluate_cases(load_manifest(manifest, split=split), engine.moderate, split=split)
     write_report(report, output)
     typer.echo(str(output))
+
+
+@app.command("compare-evaluations")
+def compare_evaluations_command(
+    baseline: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    candidate: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    max_recall_drop: Annotated[float, typer.Option(min=0, max=1)] = 0.0,
+    max_false_positive_rate_increase: Annotated[
+        float, typer.Option(min=0, max=1)
+    ] = 0.0,
+    minimum_throughput_ratio: Annotated[float, typer.Option(min=0)] = 0.9,
+) -> None:
+    """Compare media-free reports and exit nonzero on a regression."""
+
+    baseline_report = EvaluationReport.model_validate_json(
+        baseline.read_text(encoding="utf-8")
+    )
+    candidate_report = EvaluationReport.model_validate_json(
+        candidate.read_text(encoding="utf-8")
+    )
+    comparison = compare_evaluation_reports(
+        baseline_report,
+        candidate_report,
+        max_recall_drop=max_recall_drop,
+        max_false_positive_rate_increase=max_false_positive_rate_increase,
+        minimum_throughput_ratio=minimum_throughput_ratio,
+    )
+    typer.echo(comparison.model_dump_json(indent=2))
+    if not comparison.passed:
+        raise typer.Exit(code=1)
 
 
 @app.command("fingerprint")
