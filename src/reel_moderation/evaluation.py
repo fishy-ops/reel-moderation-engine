@@ -82,6 +82,7 @@ class EvaluationResult(BaseModel):
     localized_events: int = 0
     missed_events: int = 0
     first_detection_latencies_seconds: list[float] = Field(default_factory=list)
+    first_detection_offsets_seconds: list[float] = Field(default_factory=list)
     on_target_timestamps: int = 0
     off_target_timestamps: int = 0
 
@@ -157,9 +158,9 @@ def _event_outcome(
     case: EvaluationCase,
     report: ModerationReport,
     tolerance_seconds: float,
-) -> tuple[int, int, list[float], int, int]:
+) -> tuple[int, int, list[float], list[float], int, int]:
     if not case.events:
-        return 0, 0, [], 0, 0
+        return 0, 0, [], [], 0, 0
     windows = [
         (
             max(0.0, event.start_seconds - tolerance_seconds),
@@ -173,6 +174,7 @@ def _event_outcome(
         if any(lower <= timestamp <= upper for lower, upper in windows)
     ]
     latencies: list[float] = []
+    offsets: list[float] = []
     for event, (lower, upper) in zip(case.events, windows, strict=True):
         matching = [
             timestamp
@@ -180,11 +182,14 @@ def _event_outcome(
             if lower <= timestamp <= upper
         ]
         if matching:
-            latencies.append(max(0.0, min(matching) - event.start_seconds))
+            offset = min(matching) - event.start_seconds
+            offsets.append(offset)
+            latencies.append(max(0.0, offset))
     return (
         len(latencies),
         len(case.events) - len(latencies),
         latencies,
+        offsets,
         len(on_target_timestamps),
         len(report.flagged_timestamps) - len(on_target_timestamps),
     )
@@ -202,8 +207,9 @@ def _event_metrics(
     localized = sum(outcome[0] for outcome in outcomes)
     missed = sum(outcome[1] for outcome in outcomes)
     latencies = [latency for outcome in outcomes for latency in outcome[2]]
-    on_target = sum(outcome[3] for outcome in outcomes)
-    off_target = sum(outcome[4] for outcome in outcomes)
+    offsets = [offset for outcome in outcomes for offset in outcome[3]]
+    on_target = sum(outcome[4] for outcome in outcomes)
+    off_target = sum(outcome[5] for outcome in outcomes)
     timestamp_total = on_target + off_target
     return {
         "event_cases": localized + missed,
@@ -213,6 +219,14 @@ def _event_metrics(
         ),
         "mean_first_detection_latency_seconds": (
             sum(latencies) / len(latencies) if latencies else None
+        ),
+        "mean_first_detection_offset_seconds": (
+            sum(offsets) / len(offsets) if offsets else None
+        ),
+        "mean_absolute_onset_error_seconds": (
+            sum(abs(offset) for offset in offsets) / len(offsets)
+            if offsets
+            else None
         ),
         "on_target_timestamps": on_target,
         "off_target_timestamps": off_target,
@@ -242,7 +256,7 @@ def evaluate_cases(
     results: list[EvaluationResult] = []
     for case in cases:
         report = moderate(case.video)
-        localized, missed, latencies, on_target, off_target = _event_outcome(
+        localized, missed, latencies, offsets, on_target, off_target = _event_outcome(
             case,
             report,
             event_tolerance_seconds,
@@ -261,6 +275,7 @@ def evaluate_cases(
                 localized_events=localized,
                 missed_events=missed,
                 first_detection_latencies_seconds=latencies,
+                first_detection_offsets_seconds=offsets,
                 on_target_timestamps=on_target,
                 off_target_timestamps=off_target,
             )
@@ -310,6 +325,7 @@ def compare_evaluation_reports(
     *,
     max_recall_drop: float = 0.0,
     max_false_positive_rate_increase: float = 0.0,
+    max_onset_error_increase_seconds: float = 0.0,
     minimum_throughput_ratio: float = 0.9,
 ) -> EvaluationComparison:
     """Fail closed when a candidate regresses accuracy, slices, or throughput."""
@@ -317,6 +333,7 @@ def compare_evaluation_reports(
     if min(
         max_recall_drop,
         max_false_positive_rate_increase,
+        max_onset_error_increase_seconds,
         minimum_throughput_ratio,
     ) < 0:
         raise ValueError("comparison tolerances cannot be negative")
@@ -360,6 +377,7 @@ def compare_evaluation_reports(
         "errors",
         "event_localization_recall",
         "timestamp_precision",
+        "mean_absolute_onset_error_seconds",
     )
     overall_delta = {
         metric: _metric_delta(baseline.metrics, candidate.metrics, metric)
@@ -383,6 +401,16 @@ def compare_evaluation_reports(
     error_delta = overall_delta["errors"]
     if error_delta is not None and error_delta > 0:
         failures.append(f"overall processing errors increased by {int(error_delta)}")
+    onset_error_delta = overall_delta["mean_absolute_onset_error_seconds"]
+    if (
+        onset_error_delta is not None
+        and onset_error_delta > max_onset_error_increase_seconds
+    ):
+        failures.append(
+            "overall mean absolute onset error increased by "
+            f"{onset_error_delta:.6f}s, above "
+            f"{max_onset_error_increase_seconds:.6f}s"
+        )
     for metric, label in (
         ("event_localization_recall", "event-localization recall"),
         ("timestamp_precision", "timestamp precision"),
@@ -430,6 +458,16 @@ def compare_evaluation_reports(
             failures.append(
                 f"slice {slice_name!r} processing errors increased by "
                 f"{int(slice_error_delta)}"
+            )
+        slice_onset_error_delta = deltas["mean_absolute_onset_error_seconds"]
+        if (
+            slice_onset_error_delta is not None
+            and slice_onset_error_delta > max_onset_error_increase_seconds
+        ):
+            failures.append(
+                f"slice {slice_name!r} mean absolute onset error increased by "
+                f"{slice_onset_error_delta:.6f}s, above "
+                f"{max_onset_error_increase_seconds:.6f}s"
             )
         for metric, label in (
             ("event_localization_recall", "event-localization recall"),

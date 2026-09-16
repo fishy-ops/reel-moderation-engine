@@ -130,6 +130,9 @@ def compare_evaluations_command(
     max_false_positive_rate_increase: Annotated[
         float, typer.Option(min=0, max=1)
     ] = 0.0,
+    max_onset_error_increase_seconds: Annotated[
+        float, typer.Option(min=0, max=5)
+    ] = 0.0,
     minimum_throughput_ratio: Annotated[float, typer.Option(min=0)] = 0.9,
 ) -> None:
     """Compare media-free reports and exit nonzero on a regression."""
@@ -145,6 +148,7 @@ def compare_evaluations_command(
         candidate_report,
         max_recall_drop=max_recall_drop,
         max_false_positive_rate_increase=max_false_positive_rate_increase,
+        max_onset_error_increase_seconds=max_onset_error_increase_seconds,
         minimum_throughput_ratio=minimum_throughput_ratio,
     )
     typer.echo(comparison.model_dump_json(indent=2))

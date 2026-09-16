@@ -56,13 +56,15 @@ The output contains only input hashes, expected labels and event bounds, verdict
 aggregate metrics, slice metrics, and throughput. A review verdict counts as a positive
 prediction when computing the high-recall gate; report review and auto-block counts
 separately. Event-labeled cases also report event-localization recall, first-detection
-latency, on-target timestamps, off-target timestamps, and timestamp precision. A
+latency, signed first-detection offset, absolute onset error, on-target timestamps,
+off-target timestamps, and timestamp precision. A
 video-level semantic review with no primary evidence remains a video true positive but
 is correctly counted as not localized.
 
 Compare a candidate report with its approved baseline before deployment. By default,
-the gate allows no recall or false-positive-rate regression, checks every shared slice,
-requires exactly the same labeled cases, and allows at most a 10% throughput loss:
+the gate allows no recall, false-positive-rate, timestamp-precision, or onset-error
+regression, checks every shared slice, requires exactly the same labeled cases, and
+allows at most a 10% throughput loss:
 
 ```bash
 reel-moderate compare-evaluations \

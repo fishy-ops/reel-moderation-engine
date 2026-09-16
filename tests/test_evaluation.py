@@ -171,6 +171,9 @@ def test_event_localization_counts_on_and_off_target_timestamps() -> None:
     assert result.metrics["off_target_timestamps"] == 2
     assert result.metrics["timestamp_precision"] == 0.5
     assert result.results[0].first_detection_latencies_seconds == [0]
+    assert result.results[0].first_detection_offsets_seconds == pytest.approx([-0.4])
+    assert result.metrics["mean_first_detection_offset_seconds"] == pytest.approx(-0.4)
+    assert result.metrics["mean_absolute_onset_error_seconds"] == pytest.approx(0.4)
 
 
 def test_video_level_review_without_timestamp_is_not_claimed_as_localized() -> None:
@@ -214,3 +217,37 @@ def test_multiple_events_are_scored_independently() -> None:
     assert result.metrics["event_localization_recall"] == 0.5
     assert result.results[0].localized_events == 1
     assert result.results[0].missed_events == 1
+
+
+def test_comparison_rejects_worse_onset_localization() -> None:
+    case = EvaluationCase(
+        id="timing",
+        video=Path("timing.mp4"),
+        expected_violation=True,
+        events=[{"start_seconds": 2.0, "end_seconds": 3.0}],
+        slices=["brief"],
+    )
+    baseline = evaluate_cases(
+        [case],
+        lambda path: _report(
+            path.name,
+            Verdict.FLAG_FOR_HUMAN_REVIEW,
+            timestamps=[2.1],
+        ),
+    )
+    candidate = evaluate_cases(
+        [case],
+        lambda path: _report(
+            path.name,
+            Verdict.FLAG_FOR_HUMAN_REVIEW,
+            timestamps=[2.4],
+        ),
+    )
+
+    comparison = compare_evaluation_reports(baseline, candidate)
+
+    assert comparison.passed is False
+    assert comparison.overall_delta["mean_absolute_onset_error_seconds"] == pytest.approx(
+        0.3
+    )
+    assert any("onset error increased" in item for item in comparison.failures)
