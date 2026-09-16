@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from redis import Redis
 from rq import Queue
 from rq.job import Job
@@ -48,6 +48,18 @@ class FeedbackRequest(BaseModel):
     event_start_seconds: float | None = Field(default=None, ge=0)
     event_end_seconds: float | None = Field(default=None, ge=0)
 
+    @model_validator(mode="after")
+    def event_bounds_are_ordered(self) -> FeedbackRequest:
+        if (self.event_start_seconds is None) != (self.event_end_seconds is None):
+            raise ValueError("event start and end must be supplied together")
+        if (
+            self.event_start_seconds is not None
+            and self.event_end_seconds is not None
+            and self.event_end_seconds < self.event_start_seconds
+        ):
+            raise ValueError("event end cannot precede event start")
+        return self
+
 
 class ReportSignalRequest(BaseModel):
     task_id: str
@@ -55,6 +67,16 @@ class ReportSignalRequest(BaseModel):
     unique_reports: int = Field(ge=0)
     trusted_reports: int = Field(ge=0)
     reports_last_hour: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def report_counts_are_consistent(self) -> ReportSignalRequest:
+        if self.unique_reports > self.impressions:
+            raise ValueError("unique reports cannot exceed impressions")
+        if self.trusted_reports > self.unique_reports:
+            raise ValueError("trusted reports cannot exceed unique reports")
+        if self.reports_last_hour > self.unique_reports:
+            raise ValueError("recent reports cannot exceed unique reports")
+        return self
 
 
 class ReportSignalResponse(BaseModel):
@@ -97,13 +119,24 @@ async def submit_video(file: Annotated[UploadFile, File(...)]) -> SubmitResponse
     finally:
         await file.close()
 
-    queue.enqueue(
-        moderate_job,
-        str(destination),
-        job_id=task_id,
-        result_ttl=7 * 24 * 3600,
-        failure_ttl=7 * 24 * 3600,
-    )
+    if written == 0:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="video is empty")
+
+    try:
+        queue.enqueue(
+            moderate_job,
+            str(destination),
+            job_id=task_id,
+            result_ttl=7 * 24 * 3600,
+            failure_ttl=7 * 24 * 3600,
+        )
+    except Exception as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=503,
+            detail="moderation queue is unavailable",
+        ) from exc
     return SubmitResponse(task_id=task_id, status="queued")
 
 
@@ -124,7 +157,8 @@ def task_status(task_id: str) -> StatusResponse:
             status="failed",
             error="moderation task failed; inspect restricted worker logs",
         )
-    return StatusResponse(task_id=task_id, status=str(job_status))
+    status_value = getattr(job_status, "value", job_status)
+    return StatusResponse(task_id=task_id, status=str(status_value))
 
 
 def _validate_task_id(task_id: str) -> None:

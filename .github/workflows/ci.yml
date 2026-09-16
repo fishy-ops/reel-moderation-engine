@@ -17,6 +17,6 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install '.[dev]'
+      - run: pip install '.[api,dev]'
       - run: ruff check .
       - run: pytest --cov=reel_moderation --cov-report=term-missing
