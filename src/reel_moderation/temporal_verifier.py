@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from reel_moderation.schema import EvidenceSegment, FrameEvidence
+from reel_moderation.schema import EvidenceSegment, FrameEvidence, Verdict
 
 
 def summarize_secondary_review(
@@ -128,3 +128,56 @@ def summarize_temporal_verification(
             }
         )
     return summaries
+
+
+def summarize_review_priority(
+    verdict: Verdict,
+    max_risk_score: float,
+    secondary_review: dict[str, bool | float | int | None],
+    temporal_verification: list[dict[str, float | int]],
+) -> dict[str, bool | float | int | str]:
+    """Rank reviews without changing enforcement or suppressing disagreement cases."""
+
+    agreement = sum(
+        int(event.get("agreement_exposed_frames", 0))
+        for event in temporal_verification
+    )
+    covered_disagreement = sum(
+        int(event.get("disagreement_covered_frames", 0))
+        for event in temporal_verification
+    )
+    score = max_risk_score
+    rationale = "primary_model_support"
+    if verdict == Verdict.AUTO_BLOCK:
+        score = max(score, 0.95)
+        tier = "urgent"
+        rationale = "automatic_block"
+    elif verdict == Verdict.APPROVED:
+        score = 0.0
+        tier = "none"
+        rationale = "approved"
+    else:
+        if secondary_review.get("triggered") and not temporal_verification:
+            score = max(score, 0.55)
+            rationale = "secondary_semantic_consensus"
+        score += min(0.18, 0.03 * agreement)
+        score -= min(0.36, 0.07 * covered_disagreement)
+        score = min(0.94, max(0.0, score))
+        if covered_disagreement > agreement:
+            rationale = "context_disagreement"
+        tier = (
+            "high"
+            if score >= 0.72
+            else "standard"
+            if score >= 0.52
+            else "context_check"
+        )
+    return {
+        "score": round(score, 6),
+        "tier": tier,
+        "rationale": rationale,
+        "agreement_exposed_frames": agreement,
+        "disagreement_covered_frames": covered_disagreement,
+        "provisional": True,
+        "changes_verdict": False,
+    }

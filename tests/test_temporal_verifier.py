@@ -1,5 +1,6 @@
-from reel_moderation.schema import Detection, EvidenceSegment, FrameEvidence
+from reel_moderation.schema import Detection, EvidenceSegment, FrameEvidence, Verdict
 from reel_moderation.temporal_verifier import (
+    summarize_review_priority,
     summarize_secondary_review,
     summarize_temporal_verification,
 )
@@ -82,3 +83,59 @@ def test_isolated_secondary_votes_do_not_trigger_review() -> None:
     result = summarize_secondary_review(evidence, minimum_votes=2, vote_gap_seconds=1.25)
 
     assert result["triggered"] is False
+
+
+def test_review_priority_ranks_context_disagreement_below_supported_review() -> None:
+    secondary = {"triggered": False}
+    supported = summarize_review_priority(
+        Verdict.FLAG_FOR_HUMAN_REVIEW,
+        0.56,
+        secondary,
+        [
+            {
+                "agreement_exposed_frames": 2,
+                "disagreement_covered_frames": 0,
+            }
+        ],
+    )
+    disagreement = summarize_review_priority(
+        Verdict.FLAG_FOR_HUMAN_REVIEW,
+        0.74,
+        secondary,
+        [
+            {
+                "agreement_exposed_frames": 3,
+                "disagreement_covered_frames": 5,
+            }
+        ],
+    )
+
+    assert supported["tier"] == "standard"
+    assert disagreement["tier"] == "context_check"
+    assert disagreement["score"] < supported["score"]
+    assert disagreement["changes_verdict"] is False
+
+
+def test_secondary_only_review_receives_standard_priority() -> None:
+    result = summarize_review_priority(
+        Verdict.FLAG_FOR_HUMAN_REVIEW,
+        0.3,
+        {"triggered": True},
+        [],
+    )
+
+    assert result["score"] == 0.55
+    assert result["tier"] == "standard"
+    assert result["rationale"] == "secondary_semantic_consensus"
+
+
+def test_auto_block_priority_is_urgent() -> None:
+    result = summarize_review_priority(
+        Verdict.AUTO_BLOCK,
+        0.83,
+        {"triggered": False},
+        [],
+    )
+
+    assert result["score"] == 0.95
+    assert result["tier"] == "urgent"

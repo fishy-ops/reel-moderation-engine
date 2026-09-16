@@ -18,6 +18,7 @@ from reel_moderation.scorers.base import DryRunScorer, FrameScorer
 from reel_moderation.scorers.nudenet import NudeNetScorer
 from reel_moderation.scorers.semantic import EnsembleVerifier, SiglipVerifier
 from reel_moderation.temporal_verifier import (
+    summarize_review_priority,
     summarize_secondary_review,
     summarize_temporal_verification,
 )
@@ -165,6 +166,14 @@ class ModerationEngine:
             )
         if self.scorer.name == "dry-run":
             warnings.append("dry-run backend does not perform content classification")
+        temporal_verification = summarize_temporal_verification(evidence, segments)
+        max_risk_score = max((item.risk_score for item in evidence), default=0.0)
+        review_priority_hint = summarize_review_priority(
+            verdict,
+            max_risk_score,
+            secondary_review,
+            temporal_verification,
+        )
 
         return ModerationReport(
             video_name=video_path.name,
@@ -174,7 +183,7 @@ class ModerationEngine:
             total_frames_decoded=sampler.stats.decoded_frames,
             total_frames_analyzed=len(evidence),
             verdict=verdict,
-            max_risk_score=max((item.risk_score for item in evidence), default=0.0),
+            max_risk_score=max_risk_score,
             flagged_timestamps=[item.timestamp_seconds for item in risky_evidence],
             evidence_segments=segments,
             evidence=risky_evidence,
@@ -191,10 +200,9 @@ class ModerationEngine:
                 "semantic_verifier": self.config.semantic_verifier.model_dump(mode="json"),
                 "semantic_audit": semantic_audit,
                 "secondary_review": secondary_review,
+                "review_priority_hint": review_priority_hint,
                 "top_candidates": top_candidates,
-                "temporal_verification": summarize_temporal_verification(
-                    evidence, segments
-                ),
+                "temporal_verification": temporal_verification,
                 "region_tracks": summarize_tracks(evidence),
             },
         )

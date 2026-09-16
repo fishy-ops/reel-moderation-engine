@@ -41,6 +41,13 @@ emitted covered/uncertain signals on a confirmed violation. A separately trained
 Apache-licensed binary image classifier is therefore recorded alongside it for model
 agreement. Neither independent signal is yet allowed to override verdicts.
 
+Reports include a provisional review-priority hint. Primary/semantic exposure agreement
+raises the queue position, while sustained covered-context disagreement routes to a
+lower `context_check` tier. This hint never changes a verdict or approves content; it
+only helps reviewers address the most strongly supported cases first. On the current
+five-case operator regression, all four confirmed violations rank above the known
+revealing-clothing control.
+
 ## Region tracking
 
 Exposed detections in the same crop are linked using temporal gaps and bounding-box
