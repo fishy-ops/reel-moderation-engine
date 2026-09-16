@@ -1,12 +1,13 @@
-av>=14,<17
-fastapi>=0.115,<1
-nudenet>=3.4,<4
-numpy>=1.26,<3
-pillow>=10,<13
-pydantic>=2.9,<3
-pydantic-settings>=2.6,<3
-python-multipart>=0.0.18,<1
-redis>=5,<7
-rq>=2,<3
-typer>=0.15,<1
-uvicorn[standard]>=0.34,<1
+# Exact top-level versions from the verified Aurora deployment.
+av==16.1.0
+fastapi==0.141.1
+nudenet==3.4.2
+numpy==2.5.3
+pillow==12.3.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-multipart==0.0.32
+redis==6.4.0
+rq==2.12.0
+typer==0.27.2
+uvicorn[standard]==0.53.0

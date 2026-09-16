@@ -53,6 +53,12 @@ The provided Compose deployment starts:
 - read-only container roots and model cache, dropped Linux capabilities, and
   `no-new-privileges`
 - digest-pinned Python, GPU, and Redis base images
+- exact deployed top-level Python package versions, while project metadata retains
+  compatible ranges for CI compatibility testing
+
+The GPU image intentionally satisfies NudeNet's `onnxruntime` dependency with
+`onnxruntime-gpu`; its build asserts that this provider-name substitution is the only
+dependency-check exception.
 
 Redis runs directly as its image's unprivileged account so its startup path does not
 require ownership-changing capabilities.

@@ -17,7 +17,9 @@ WORKDIR /app
 COPY requirements-gpu.txt ./
 RUN pip install --upgrade pip \
     && pip install -r requirements-gpu.txt \
-    && pip install --no-deps 'nudenet>=3.4,<4'
+    && pip install --no-deps 'nudenet==3.4.2' \
+    && test "$(pip check 2>&1)" = \
+        "nudenet 3.4.2 requires onnxruntime, which is not installed."
 
 COPY pyproject.toml README.md ./
 COPY src ./src

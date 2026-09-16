@@ -1,15 +1,18 @@
-av>=14,<17
-fastapi>=0.115,<1
-numpy>=1.26,<3
+# Exact top-level versions from the verified Aurora GPU deployment. PyTorch is
+# supplied by the digest-pinned base image.
+av==16.1.0
+click==8.3.3
+fastapi==0.141.1
+numpy==2.4.4
 # The ensemble image uses CUDA 13 and cuDNN 9 for both ONNX Runtime and PyTorch.
-onnxruntime-gpu>=1.27,<1.30
-opencv-python-headless>=4.10,<6
-pillow>=10,<13
-pydantic>=2.9,<3
-pydantic-settings>=2.6,<3
-python-multipart>=0.0.18,<1
-redis>=5,<7
-rq>=2,<3
-typer>=0.15,<1
-transformers>=4.57,<6
-uvicorn[standard]>=0.34,<1
+onnxruntime-gpu==1.29.0
+opencv-python-headless==5.0.0.93
+pillow==12.2.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-multipart==0.0.32
+redis==6.4.0
+rq==2.12.0
+typer==0.27.2
+transformers==5.17.0
+uvicorn[standard]==0.53.0

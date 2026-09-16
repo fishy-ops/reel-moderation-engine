@@ -11,7 +11,8 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements-runtime.txt ./
 RUN pip install --upgrade pip \
-    && pip install -r requirements-runtime.txt
+    && pip install -r requirements-runtime.txt \
+    && pip check
 
 COPY pyproject.toml README.md ./
 COPY src ./src
