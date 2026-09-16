@@ -9,7 +9,7 @@ video
   -> SHA-256 + perceptual frame fingerprint
   -> every-frame thumbnail/change scan
   -> NudeNet full-frame and overlapping-region proposals
-  -> SigLIP 2 context + Falconsai binary NSFW audit ensemble
+  -> SigLIP 2 context + Falconsai binary NSFW verifier ensemble
   -> temporal region tracks and evidence clustering
   -> configurable policy decision
   -> review feedback and report-priority store
@@ -21,14 +21,15 @@ video
 unchanged. Reports also include event-level agreement/disagreement counts and temporal
 region tracks. This is the default until a held-out set establishes calibration.
 
-`review` is the deployed high-recall mode. Agreement may apply a configured review-risk
-floor, but covered-clothing disagreement cannot lower primary risk and the floor stays
-below the automatic-block threshold. `enforce` may additionally reduce risk when
-covered context wins; it remains disabled. In every mode, viewer reports only
-prioritize review and never auto-block content.
+`review` is the deployed high-recall mode. Temporally adjacent agreement may raise an
+otherwise approved video to human review, but it does not change frame risk or invent
+an evidence timestamp. Covered-clothing disagreement cannot lower primary risk.
+`enforce` may adjust frame risk in both directions; it remains disabled. In every mode,
+viewer reports only prioritize review and never auto-block content.
 
 The verifier evaluates candidate regions in memory. Hugging Face model files live in
-Aurora's model volume. No decoded frames are retained.
+Aurora's model volume. Semantic regions from one detector batch are scored together to
+reduce GPU launch overhead. No decoded frames are retained.
 
 The initial operator calibration showed why one-way review assistance matters: SigLIP 2 correctly
 recognized sustained covered-clothing evidence in the known false positive, but also

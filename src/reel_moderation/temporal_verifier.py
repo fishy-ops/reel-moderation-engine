@@ -3,6 +3,66 @@ from __future__ import annotations
 from reel_moderation.schema import EvidenceSegment, FrameEvidence
 
 
+def summarize_secondary_review(
+    evidence: list[FrameEvidence],
+    minimum_votes: int = 2,
+    vote_gap_seconds: float = 1.25,
+) -> dict[str, bool | float | int | None]:
+    """Find sustained semantic agreement without inventing policy timestamps.
+
+    This signal may raise an otherwise approved video to human review. It is kept
+    separate from evidence segments because the broad classifiers are not reliable
+    enough to localize the exact policy event.
+    """
+
+    votes = sorted(
+        (
+            frame
+            for frame in evidence
+            if frame.verifier_signals.get("semantic_decision") == "exposed"
+        ),
+        key=lambda frame: frame.timestamp_seconds,
+    )
+    clusters: list[list[FrameEvidence]] = []
+    for frame in votes:
+        if not clusters or (
+            frame.timestamp_seconds - clusters[-1][-1].timestamp_seconds
+            > vote_gap_seconds
+        ):
+            clusters.append([frame])
+        else:
+            clusters[-1].append(frame)
+    strongest = max(
+        clusters,
+        key=lambda cluster: (
+            len(cluster),
+            max(
+                float(frame.verifier_signals.get("semantic_exposed", 0.0))
+                for frame in cluster
+            ),
+        ),
+        default=[],
+    )
+    strengths = [
+        float(frame.verifier_signals.get("semantic_exposed", 0.0))
+        for frame in strongest
+    ]
+    return {
+        "triggered": len(strongest) >= minimum_votes,
+        "minimum_votes": minimum_votes,
+        "vote_gap_seconds": vote_gap_seconds,
+        "total_exposed_votes": len(votes),
+        "strongest_cluster_votes": len(strongest),
+        "strongest_cluster_start": (
+            strongest[0].timestamp_seconds if strongest else None
+        ),
+        "strongest_cluster_end": (
+            strongest[-1].timestamp_seconds if strongest else None
+        ),
+        "strongest_cluster_max_score": max(strengths, default=None),
+    }
+
+
 def summarize_temporal_verification(
     evidence: list[FrameEvidence],
     segments: list[EvidenceSegment],

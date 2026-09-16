@@ -53,8 +53,6 @@ def _apply_semantic_mode(
 ) -> float:
     if mode == "enforce":
         return adjusted_risk
-    if mode == "review" and decision == "exposed":
-        return adjusted_risk
     return raw_risk
 
 
@@ -211,8 +209,10 @@ class NudeNetScorer(FrameScorer):
         return detections
 
     def score_batch(self, frames: list[FrameCandidate]) -> list[FrameScore]:
-        output: list[FrameScore] = []
-        for frame in frames:
+        staged: list[tuple[float, list[Detection]]] = []
+        semantic_positions: list[int] = []
+        semantic_groups: list[list[RGBFrame]] = []
+        for position, frame in enumerate(frames):
             with tempfile.TemporaryDirectory(dir=self.scratch_dir) as tmp:
                 directory = Path(tmp)
                 regions = _crops(frame.rgb) if self._should_tile(frame) else [("full", frame.rgb)]
@@ -221,16 +221,25 @@ class NudeNetScorer(FrameScorer):
                     detections.extend(self._detect(crop, crop_name, directory))
 
             raw_risk = _risk_from_detections(detections)
+            staged.append((raw_risk, detections))
+            if self._should_verify_semantically(frame, raw_risk):
+                semantic_positions.append(position)
+                semantic_groups.append([region for _, region in _crops(frame.rgb)])
+
+        semantic_by_position = {}
+        if semantic_groups:
+            if self.semantic_verifier is None:  # pragma: no cover - defensive invariant
+                raise RuntimeError("semantic verification was scheduled without a verifier")
+            semantic_scores = self.semantic_verifier.score_many(semantic_groups)
+            semantic_by_position = dict(
+                zip(semantic_positions, semantic_scores, strict=True)
+            )
+
+        output: list[FrameScore] = []
+        for position, (raw_risk, detections) in enumerate(staged):
             risk = raw_risk
             signals: dict[str, float | str] = {}
-            if self._should_verify_semantically(frame, raw_risk):
-                # Give the independent verifier full-frame and tiled views even
-                # when the primary detector found no candidate. This is the path
-                # that can recover complete primary-model misses.
-                semantic_regions = _crops(frame.rgb)
-                semantic_score = self.semantic_verifier.score(
-                    [region for _, region in semantic_regions]
-                )
+            if semantic_score := semantic_by_position.get(position):
                 adjusted, decision = adjust_risk(raw_risk, semantic_score, self.semantic_config)
                 signals = {**semantic_score.signals(), "semantic_decision": decision}
                 risk = _apply_semantic_mode(

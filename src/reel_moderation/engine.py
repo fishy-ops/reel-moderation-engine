@@ -8,11 +8,14 @@ from pathlib import Path
 from reel_moderation.aggregator import TemporalAggregator, summarize_labels
 from reel_moderation.config import EngineConfig
 from reel_moderation.sampling import AdaptiveSampler, FrameCandidate
-from reel_moderation.schema import FrameEvidence, ModerationReport
+from reel_moderation.schema import FrameEvidence, ModerationReport, Verdict
 from reel_moderation.scorers.base import DryRunScorer, FrameScorer
 from reel_moderation.scorers.nudenet import NudeNetScorer
 from reel_moderation.scorers.semantic import EnsembleVerifier, SiglipVerifier
-from reel_moderation.temporal_verifier import summarize_temporal_verification
+from reel_moderation.temporal_verifier import (
+    summarize_secondary_review,
+    summarize_temporal_verification,
+)
 from reel_moderation.tracking import summarize_tracks
 
 
@@ -98,6 +101,21 @@ class ModerationEngine:
                 )
 
         verdict, segments = self.aggregator.verdict(evidence)
+        secondary_review = summarize_secondary_review(
+            evidence,
+            minimum_votes=self.config.semantic_verifier.review_minimum_votes,
+            vote_gap_seconds=self.config.semantic_verifier.review_vote_gap_seconds,
+        )
+        if (
+            self.config.semantic_verifier.mode == "review"
+            and secondary_review["triggered"]
+            and verdict == Verdict.APPROVED
+        ):
+            verdict = Verdict.FLAG_FOR_HUMAN_REVIEW
+            warnings.append(
+                "secondary semantic consensus raised the video to review; "
+                "no exact policy timestamp was inferred"
+            )
         risky_evidence = [
             item for item in evidence if item.risk_score >= self.config.policy.review_threshold
         ]
@@ -159,6 +177,7 @@ class ModerationEngine:
                 "policy": self.config.policy.model_dump(mode="json"),
                 "semantic_verifier": self.config.semantic_verifier.model_dump(mode="json"),
                 "semantic_audit": semantic_audit,
+                "secondary_review": secondary_review,
                 "top_candidates": top_candidates,
                 "temporal_verification": summarize_temporal_verification(
                     evidence, segments

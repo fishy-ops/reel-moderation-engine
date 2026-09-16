@@ -78,7 +78,8 @@ The GPU override also enables a SigLIP 2 plus Falconsai verifier ensemble in `re
 mode. It runs on a periodic baseline, adaptive visual-change triggers, and
 primary-model candidates, so it can observe complete primary-model misses. Audit mode
 records signals without changing the verdict; review mode may only raise a candidate
-to human review and can neither lower risk nor auto-block by itself. Switch to full
+to human review at the video level and can neither lower risk, invent an exact evidence
+timestamp, nor auto-block by itself. Switch to full
 `enforce` mode only after a held-out evaluation establishes safe thresholds. See the
 [phase-two architecture](docs/architecture-v2.md).
 

@@ -9,6 +9,7 @@ from reel_moderation.scorers.nudenet import (
     _apply_semantic_mode,
     _risk_from_detections,
 )
+from reel_moderation.scorers.semantic import SemanticScore
 
 
 def detection(label: str, score: float) -> Detection:
@@ -94,7 +95,38 @@ def test_reset_clears_per_video_sampling_state() -> None:
     assert scorer._last_semantic_at == float("-inf")
 
 
-def test_review_mode_only_allows_upward_exposed_adjustment() -> None:
+def test_review_mode_keeps_frame_risk_unlocalized() -> None:
     assert _apply_semantic_mode(0.7, 0.3, "covered", "review") == 0.7
-    assert _apply_semantic_mode(0.2, 0.55, "exposed", "review") == 0.55
+    assert _apply_semantic_mode(0.2, 0.55, "exposed", "review") == 0.2
     assert _apply_semantic_mode(0.7, 0.3, "covered", "enforce") == 0.3
+
+
+def test_semantic_frames_are_batched(tmp_path) -> None:
+    class BatchVerifier:
+        name = "batch-test"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def score_many(self, region_groups):
+            self.calls += 1
+            return [SemanticScore(0.7, 0.2, 0.1, 0) for _ in region_groups]
+
+    scorer = object.__new__(NudeNetScorer)
+    scorer.scratch_dir = tmp_path
+    scorer.semantic_verifier = BatchVerifier()
+    scorer.semantic_config = SemanticVerifierConfig(mode="audit")
+    scorer._should_tile = lambda frame: False
+    scorer._detect = lambda rgb, crop_name, directory: []
+    scorer._should_verify_semantically = lambda frame, risk: True
+    rgb = np.zeros((360, 640, 3), dtype=np.uint8)
+    frames = [
+        FrameCandidate(0, 0.0, rgb, {"baseline"}),
+        FrameCandidate(30, 1.0, rgb, {"baseline"}),
+    ]
+
+    scores = scorer.score_batch(frames)
+
+    assert scorer.semantic_verifier.calls == 1
+    assert len(scores) == 2
+    assert all(score.verifier_signals["semantic_decision"] == "exposed" for score in scores)

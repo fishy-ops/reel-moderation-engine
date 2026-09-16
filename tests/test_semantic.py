@@ -11,6 +11,9 @@ class FixedVerifier:
     def score(self, regions):
         return self._score
 
+    def score_many(self, region_groups):
+        return [self._score for _ in region_groups]
+
 
 def test_covered_semantic_consensus_reduces_risk() -> None:
     config = SemanticVerifierConfig(mode="enforce")
@@ -45,9 +48,9 @@ def test_ensemble_preserves_independent_classifier_signal() -> None:
         SemanticScore(0.8, 0.0, 0.2, 1, {"falcon_nsfw": 0.8})
     )
 
-    score = verifier.score([object()])
+    score = verifier.score([object(), object()])
 
     assert score.exposed_probability == pytest.approx(0.8)
     assert score.region_index == 1
     assert score.component_signals["falcon_nsfw"] == 0.8
-
+    assert score.component_signals["falcon_region_index"] == 1.0

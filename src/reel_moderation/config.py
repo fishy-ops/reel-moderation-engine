@@ -50,6 +50,8 @@ class SemanticVerifierConfig(BaseModel):
     exposed_margin: float = Field(default=0.15, ge=0, le=1)
     exposed_boost: float = Field(default=0.25, ge=0, le=1)
     exposed_review_floor: float = Field(default=0.55, ge=0, le=1)
+    review_minimum_votes: int = Field(default=2, ge=2, le=30)
+    review_vote_gap_seconds: float = Field(default=1.25, gt=0, le=5)
 
     @model_validator(mode="after")
     def semantic_intervals_are_ordered(self) -> SemanticVerifierConfig:

@@ -51,6 +51,8 @@ class SemanticVerifier(Protocol):
 
     def score(self, regions: list[RGBFrame]) -> SemanticScore: ...
 
+    def score_many(self, region_groups: list[list[RGBFrame]]) -> list[SemanticScore]: ...
+
 
 class SiglipVerifier:
     name = "siglip2"
@@ -71,7 +73,7 @@ class SiglipVerifier:
         self._processor = AutoProcessor.from_pretrained(model_id)
         self._model = AutoModel.from_pretrained(
             model_id,
-            torch_dtype=torch.float16,
+            dtype=torch.float16,
         ).to(self._device)
         self._model.eval()
         self._prompts = [*EXPOSED_PROMPTS, *COVERED_PROMPTS, *OTHER_PROMPTS]
@@ -79,6 +81,14 @@ class SiglipVerifier:
     def score(self, regions: list[RGBFrame]) -> SemanticScore:
         if not regions:
             raise ValueError("at least one region is required for semantic verification")
+        return self.score_many([regions])[0]
+
+    def score_many(self, region_groups: list[list[RGBFrame]]) -> list[SemanticScore]:
+        if not region_groups:
+            return []
+        if any(not regions for regions in region_groups):
+            raise ValueError("each semantic verification group requires a region")
+        regions = [region for group in region_groups for region in group]
         inputs = self._processor(
             text=self._prompts,
             images=regions,
@@ -98,19 +108,27 @@ class SiglipVerifier:
                 dim=1,
             )
             probabilities = self._torch.softmax(grouped, dim=1).cpu().numpy()
-        region_index = int(np.argmax(probabilities[:, 0]))
-        exposed, covered, other = probabilities[region_index]
-        return SemanticScore(
-            exposed_probability=float(exposed),
-            covered_probability=float(covered),
-            other_probability=float(other),
-            region_index=region_index,
-            component_signals={
-                "siglip_exposed": float(exposed),
-                "siglip_covered": float(covered),
-                "siglip_other": float(other),
-            },
-        )
+        scores: list[SemanticScore] = []
+        offset = 0
+        for regions_in_group in region_groups:
+            group = probabilities[offset : offset + len(regions_in_group)]
+            region_index = int(np.argmax(group[:, 0]))
+            exposed, covered, other = group[region_index]
+            scores.append(
+                SemanticScore(
+                    exposed_probability=float(exposed),
+                    covered_probability=float(covered),
+                    other_probability=float(other),
+                    region_index=region_index,
+                    component_signals={
+                        "siglip_exposed": float(exposed),
+                        "siglip_covered": float(covered),
+                        "siglip_other": float(other),
+                    },
+                )
+            )
+            offset += len(regions_in_group)
+        return scores
 
 
 class FalconNsfwVerifier:
@@ -147,20 +165,36 @@ class FalconNsfwVerifier:
     def score(self, regions: list[RGBFrame]) -> SemanticScore:
         if not regions:
             raise ValueError("at least one region is required for semantic verification")
+        return self.score_many([regions])[0]
+
+    def score_many(self, region_groups: list[list[RGBFrame]]) -> list[SemanticScore]:
+        if not region_groups:
+            return []
+        if any(not regions for regions in region_groups):
+            raise ValueError("each semantic verification group requires a region")
+        regions = [region for group in region_groups for region in group]
         inputs = self._processor(images=regions, return_tensors="pt")
         inputs = {key: value.to(self._device) for key, value in inputs.items()}
         with self._torch.inference_mode():
             logits = self._model(**inputs).logits.float()
             probabilities = self._torch.softmax(logits, dim=1).cpu().numpy()
-        region_index = int(np.argmax(probabilities[:, self._nsfw_index]))
-        nsfw_probability = float(probabilities[region_index, self._nsfw_index])
-        return SemanticScore(
-            exposed_probability=nsfw_probability,
-            covered_probability=0.0,
-            other_probability=1.0 - nsfw_probability,
-            region_index=region_index,
-            component_signals={"falcon_nsfw": nsfw_probability},
-        )
+        scores: list[SemanticScore] = []
+        offset = 0
+        for regions_in_group in region_groups:
+            group = probabilities[offset : offset + len(regions_in_group)]
+            region_index = int(np.argmax(group[:, self._nsfw_index]))
+            nsfw_probability = float(group[region_index, self._nsfw_index])
+            scores.append(
+                SemanticScore(
+                    exposed_probability=nsfw_probability,
+                    covered_probability=0.0,
+                    other_probability=1.0 - nsfw_probability,
+                    region_index=region_index,
+                    component_signals={"falcon_nsfw": nsfw_probability},
+                )
+            )
+            offset += len(regions_in_group)
+        return scores
 
 
 class EnsembleVerifier:
@@ -171,8 +205,20 @@ class EnsembleVerifier:
         self._classifier = FalconNsfwVerifier(classifier_model_id)
 
     def score(self, regions: list[RGBFrame]) -> SemanticScore:
-        siglip = self._siglip.score(regions)
-        classifier = self._classifier.score(regions)
+        return self.score_many([regions])[0]
+
+    def score_many(self, region_groups: list[list[RGBFrame]]) -> list[SemanticScore]:
+        siglip_scores = self._siglip.score_many(region_groups)
+        classifier_scores = self._classifier.score_many(region_groups)
+        return [
+            self._combine(siglip, classifier)
+            for siglip, classifier in zip(
+                siglip_scores, classifier_scores, strict=True
+            )
+        ]
+
+    @staticmethod
+    def _combine(siglip: SemanticScore, classifier: SemanticScore) -> SemanticScore:
         # A geometric mean requires both differently trained models to contribute.
         # It prevents the broad binary classifier from dominating on revealing but
         # covered content merely because its standalone score is near one.
@@ -199,6 +245,8 @@ class EnsembleVerifier:
             component_signals={
                 **siglip.component_signals,
                 **classifier.component_signals,
+                "siglip_region_index": float(siglip.region_index),
+                "falcon_region_index": float(classifier.region_index),
             },
         )
 
