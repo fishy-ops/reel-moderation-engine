@@ -55,11 +55,14 @@ def moderate_job(video_path: str) -> dict:
         reports_dir.mkdir(parents=True, exist_ok=True)
         report_path = reports_dir / f"{path.stem}.json"
         temporary_report = report_path.with_suffix(".json.tmp")
-        temporary_report.write_text(
-            report.model_dump_json(indent=2) + "\n",
-            encoding="utf-8",
-        )
-        temporary_report.replace(report_path)
+        try:
+            temporary_report.write_text(
+                report.model_dump_json(indent=2) + "\n",
+                encoding="utf-8",
+            )
+            temporary_report.replace(report_path)
+        finally:
+            temporary_report.unlink(missing_ok=True)
         return report.model_dump(mode="json")
     finally:
         if delete_inputs:

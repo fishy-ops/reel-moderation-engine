@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -85,7 +86,7 @@ def test_feedback_is_grouped_by_exact_configuration(tmp_path: Path) -> None:
 
 def test_existing_feedback_database_is_migrated_in_place(tmp_path: Path) -> None:
     database = tmp_path / "feedback.sqlite"
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute(
             """
             CREATE TABLE moderation_feedback (
@@ -107,7 +108,7 @@ def test_existing_feedback_database_is_migrated_in_place(tmp_path: Path) -> None
 
     record_feedback(database, report, "safe", "migration test")
 
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         columns = {
             row[1] for row in connection.execute("PRAGMA table_info(moderation_feedback)")
         }

@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 from collections import defaultdict
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -30,7 +31,7 @@ class ConfigurationFeedbackSummary(FeedbackSummary):
 
 def initialize_database(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS moderation_feedback (
@@ -108,7 +109,7 @@ def record_feedback(
     metadata = report.get("metadata")
     metadata = metadata if isinstance(metadata, dict) else {}
     initialize_database(database)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         cursor = connection.execute(
             """
             INSERT INTO moderation_feedback (
@@ -155,7 +156,7 @@ def _summarize_rows(rows: list[tuple[str, str]]) -> FeedbackSummary:
 
 def summarize_feedback(database: Path) -> FeedbackSummary:
     initialize_database(database)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         rows = connection.execute(
             "SELECT predicted_verdict, ground_truth FROM moderation_feedback"
         ).fetchall()
@@ -166,7 +167,7 @@ def summarize_feedback_by_configuration(
     database: Path,
 ) -> list[ConfigurationFeedbackSummary]:
     initialize_database(database)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         rows = connection.execute(
             """
             SELECT pipeline_version, pipeline_source_sha256, decision_config_sha256,
@@ -234,7 +235,7 @@ def update_report_aggregate(
         reports_last_hour,
     )
     initialize_database(database)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute(
             """
             INSERT INTO report_aggregates (
