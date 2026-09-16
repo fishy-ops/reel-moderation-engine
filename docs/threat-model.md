@@ -27,6 +27,7 @@
 - Python, GPU, and Redis base images are pinned by immutable registry digest.
 - Runtime requirement files pin the verified top-level package versions used on
   Aurora; dependency-range compatibility remains tested separately in CI.
+- Third-party CI actions are pinned to immutable commits rather than mutable tags.
 - Opaque API upload copies are deleted after either successful or failed processing.
 - Abandoned upload copies with valid task-ID names are removed after 24 hours on the
   next admission attempt.
