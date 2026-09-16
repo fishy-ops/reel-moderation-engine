@@ -161,7 +161,7 @@ class ModerationEngine:
         if sampler.stats.capped_candidates:
             warnings.append(
                 f"candidate cap dropped {sampler.stats.capped_candidates} frames; "
-                "review sampling limits"
+                "baseline coverage was preserved"
             )
         if self.scorer.name == "dry-run":
             warnings.append("dry-run backend does not perform content classification")

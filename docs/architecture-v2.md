@@ -15,6 +15,9 @@ video
   -> review feedback and report-priority store
 ```
 
+The adaptive candidate budget applies only to change-triggered extras. Uniform baseline
+samples are never dropped, even if an adversarial strobe exhausts the adaptive budget.
+
 ## Semantic verifier modes
 
 `audit` records semantic probabilities and decisions but leaves the NudeNet risk

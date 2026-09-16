@@ -59,17 +59,18 @@ class AdaptiveSampler:
         self.stats = SamplingStats()
 
     def sample(self, video_path: Path) -> Iterator[FrameCandidate]:
+        self.stats = SamplingStats()
         previous_thumb: RGBFrame | None = None
         next_baseline_at = 0.0
         burst_until = -1.0
-        emitted = 0
+        adaptive_emitted = 0
 
         with av.open(str(video_path)) as container:
             stream = container.streams.video[0]
             fps = float(stream.average_rate) if stream.average_rate else 0.0
             self.stats.source_fps = fps
             time_base = float(stream.time_base)
-            max_candidates = max(
+            max_adaptive_candidates = max(
                 1,
                 int(
                     self.config.max_candidates_per_minute
@@ -83,6 +84,7 @@ class AdaptiveSampler:
                     if frame.pts is not None
                     else (frame_index / fps if fps else 0.0)
                 )
+                timestamp = max(timestamp, 0.0)
                 thumb = frame.reformat(
                     width=self.config.thumbnail_size,
                     height=self.config.thumbnail_size,
@@ -119,11 +121,13 @@ class AdaptiveSampler:
                     reasons.add("dense_burst")
 
                 if reasons:
-                    if emitted < max_candidates:
-                        emitted += 1
+                    baseline_due = "baseline" in reasons
+                    if baseline_due or adaptive_emitted < max_adaptive_candidates:
+                        if not baseline_due:
+                            adaptive_emitted += 1
                         yield FrameCandidate(
                             frame_index=frame_index,
-                            timestamp_seconds=max(timestamp, 0.0),
+                            timestamp_seconds=timestamp,
                             rgb=frame.to_ndarray(format="rgb24"),
                             reasons=reasons,
                             change_score=change_score,
@@ -133,4 +137,12 @@ class AdaptiveSampler:
 
                 previous_thumb = thumb
                 self.stats.decoded_frames = frame_index + 1
-                self.stats.duration_seconds = max(self.stats.duration_seconds, timestamp)
+                frame_duration = (
+                    float(frame.duration * stream.time_base)
+                    if frame.duration is not None
+                    else (1.0 / fps if fps else 0.0)
+                )
+                self.stats.duration_seconds = max(
+                    self.stats.duration_seconds,
+                    timestamp + max(frame_duration, 0.0),
+                )

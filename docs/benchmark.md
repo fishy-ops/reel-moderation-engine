@@ -34,10 +34,14 @@ presented as held-out or representative performance.
 | Configuration | Recall | Precision | Review | Auto-block | Throughput |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | NudeNet baseline | 75% (3/4) | 75% (3/4) | 3 | 1 | not comparable |
-| Batched video-level review ensemble | 100% (4/4) | 80% (4/5) | 4 | 1 | 1.10× real time |
+| Batched video-level review ensemble | 100% (4/4) | 80% (4/5) | 4 | 1 | 1.14× real time |
 
-The current ensemble processed 75.53 seconds of media in 68.65 seconds. It recovered
+The current ensemble processed 75.70 seconds of media in 66.69 seconds. It recovered
 the known primary-model miss as a video-level review without assigning false evidence
 timestamps, preserved the correct automatic block, and retained the known
 revealing-clothing false positive as review. The next accuracy gate requires many more
 representative negative examples and a genuinely held-out split.
+
+The current sampler also preserves uniform baseline frames after the adaptive candidate
+budget is exhausted, preventing an early high-change sequence from blinding the rest of
+the video. Final-frame duration is included in throughput accounting.
