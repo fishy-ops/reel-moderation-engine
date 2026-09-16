@@ -34,13 +34,20 @@ presented as held-out or representative performance.
 | Configuration | Recall | Precision | Review | Auto-block | Throughput |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | NudeNet baseline | 75% (3/4) | 75% (3/4) | 3 | 1 | not comparable |
-| Batched video-level review ensemble | 100% (4/4) | 80% (4/5) | 4 | 1 | 1.14× real time |
+| Batched video-level review ensemble | 100% (4/4) | 80% (4/5) | 4 | 1 | 1.15× real time |
 
-The current ensemble processed 75.70 seconds of media in 66.69 seconds. It recovered
+The current ensemble processed 75.70 seconds of media in 65.87 seconds. It recovered
 the known primary-model miss as a video-level review without assigning false evidence
 timestamps, preserved the correct automatic block, and retained the known
 revealing-clothing false positive as review. The next accuracy gate requires many more
 representative negative examples and a genuinely held-out split.
+
+Three events have operator-recorded time bounds. The current report localized two of
+three, with 66.7% timestamp precision and 0.504-second mean absolute onset error across
+the two localized events. The remaining video-level recovery intentionally reports no
+fabricated timestamp. The safe control was never auto-blocked. A private, media-local
+manifest and its metadata-only baseline report are stored on Aurora for regression
+testing; neither media nor private paths are committed.
 
 The current sampler also preserves uniform baseline frames after the adaptive candidate
 budget is exhausted, preventing an early high-change sequence from blinding the rest of
