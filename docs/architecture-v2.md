@@ -66,6 +66,8 @@ priority uses report rate, trusted-report fraction, and recent velocity, capped 
 the automatic-enforcement threshold to resist brigading. Cumulative impression,
 unique-report, and trusted-report counters are monotonic so stale updates cannot roll
 priority inputs backward; the recent-velocity window may decay normally.
+Reviewer submissions are idempotent per report hash and reviewer: retries or corrected
+labels update one adjudication instead of inflating calibration counts.
 
 ## Adversarial challenge generation
 

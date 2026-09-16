@@ -135,7 +135,13 @@ def test_existing_feedback_database_is_migrated_in_place(tmp_path: Path) -> None
             "SELECT pipeline_source_sha256, decision_config_sha256 "
             "FROM moderation_feedback"
         ).fetchone()
-    assert {"pipeline_version", "pipeline_source_sha256", "decision_config_sha256"} <= columns
+    assert {
+        "pipeline_version",
+        "pipeline_source_sha256",
+        "decision_config_sha256",
+        "review_key",
+        "updated_at",
+    } <= columns
     assert stored == ("source", "config")
 
 
@@ -151,3 +157,26 @@ def test_feedback_event_bounds_must_be_complete(tmp_path: Path) -> None:
             "incomplete event",
             event_start_seconds=1.0,
         )
+
+
+def test_retried_reviewer_decision_updates_one_adjudication(tmp_path: Path) -> None:
+    database = tmp_path / "feedback.sqlite"
+    report = tmp_path / "report.json"
+    write_report(report, "APPROVED", "digest", "source", "config")
+
+    first_id = record_feedback(database, report, "violation", "initial label")
+    second_id = record_feedback(database, report, "safe", "corrected label")
+
+    summary = summarize_feedback(database)
+    assert second_id == first_id
+    assert summary.total == 1
+    assert summary.safe == 1
+    assert summary.false_negative == 0
+    with closing(sqlite3.connect(database)) as connection:
+        stored = connection.execute(
+            "SELECT reason, created_at, updated_at FROM moderation_feedback"
+        ).fetchone()
+    assert stored is not None
+    assert stored[0] == "corrected label"
+    assert stored[1] is not None
+    assert stored[2] is not None

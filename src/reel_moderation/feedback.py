@@ -46,10 +46,12 @@ def initialize_database(path: Path) -> None:
                 event_end_seconds REAL,
                 reason TEXT NOT NULL,
                 reviewer TEXT NOT NULL,
+                review_key TEXT,
                 pipeline_version TEXT,
                 pipeline_source_sha256 TEXT,
                 decision_config_sha256 TEXT,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                updated_at TEXT
             )
             """
         )
@@ -61,11 +63,36 @@ def initialize_database(path: Path) -> None:
             "pipeline_version",
             "pipeline_source_sha256",
             "decision_config_sha256",
+            "review_key",
+            "updated_at",
         ):
             if column not in existing_columns:
                 connection.execute(
                     f"ALTER TABLE moderation_feedback ADD COLUMN {column} TEXT"
                 )
+        seen_review_keys: set[str] = set()
+        existing_reviews = connection.execute(
+            """
+            SELECT id, report_sha256, reviewer
+            FROM moderation_feedback
+            ORDER BY id DESC
+            """
+        ).fetchall()
+        for feedback_id, report_digest, existing_reviewer in existing_reviews:
+            review_key = hashlib.sha256(
+                f"{report_digest}:{existing_reviewer}".encode()
+            ).hexdigest()
+            if review_key in seen_review_keys:
+                continue
+            seen_review_keys.add(review_key)
+            connection.execute(
+                "UPDATE moderation_feedback SET review_key = ? WHERE id = ?",
+                (review_key, feedback_id),
+            )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS feedback_review_key_idx "
+            "ON moderation_feedback(review_key)"
+        )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS feedback_video_idx "
             "ON moderation_feedback(video_sha256)"
@@ -108,33 +135,54 @@ def record_feedback(
     report = json.loads(raw_report)
     metadata = report.get("metadata")
     metadata = metadata if isinstance(metadata, dict) else {}
+    report_digest = hashlib.sha256(raw_report).hexdigest()
+    review_key = hashlib.sha256(f"{report_digest}:{reviewer}".encode()).hexdigest()
+    now = datetime.now(UTC).isoformat()
     initialize_database(database)
     with closing(sqlite3.connect(database)) as connection, connection:
-        cursor = connection.execute(
+        connection.execute(
             """
             INSERT INTO moderation_feedback (
                 video_sha256, report_sha256, predicted_verdict, ground_truth,
                 event_start_seconds, event_end_seconds, reason, reviewer,
+                review_key,
                 pipeline_version, pipeline_source_sha256, decision_config_sha256,
-                created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(review_key) DO UPDATE SET
+                ground_truth=excluded.ground_truth,
+                event_start_seconds=excluded.event_start_seconds,
+                event_end_seconds=excluded.event_end_seconds,
+                reason=excluded.reason,
+                pipeline_version=excluded.pipeline_version,
+                pipeline_source_sha256=excluded.pipeline_source_sha256,
+                decision_config_sha256=excluded.decision_config_sha256,
+                updated_at=excluded.updated_at
             """,
             (
                 report["video_sha256"],
-                hashlib.sha256(raw_report).hexdigest(),
+                report_digest,
                 report["verdict"],
                 ground_truth,
                 event_start_seconds,
                 event_end_seconds,
                 reason,
                 reviewer,
+                review_key,
                 metadata.get("pipeline_version"),
                 metadata.get("pipeline_source_sha256"),
                 metadata.get("decision_config_sha256"),
-                datetime.now(UTC).isoformat(),
+                now,
+                now,
             ),
         )
-        return int(cursor.lastrowid)
+        row = connection.execute(
+            "SELECT id FROM moderation_feedback WHERE review_key = ?",
+            (review_key,),
+        ).fetchone()
+        if row is None:  # pragma: no cover - database invariant
+            raise RuntimeError("feedback upsert did not produce a row")
+        return int(row[0])
 
 
 def _summarize_rows(rows: list[tuple[str, str]]) -> FeedbackSummary:
